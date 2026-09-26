@@ -1,0 +1,51 @@
+import { INestApplication, Type } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { Test } from '@nestjs/testing';
+import request from 'supertest';
+import { App } from 'supertest/types';
+import { AuthModule } from '../../src/auth/auth.module';
+import { FakeIdp } from './fake-idp';
+
+export interface AuthTestApp {
+  app: INestApplication<App>;
+  idp: FakeIdp;
+  get: (path: string, token?: string) => request.Test;
+  close: () => Promise<void>;
+}
+
+/**
+ * Boots the real AuthModule (JwtStrategy + global guards) against a FakeIdp,
+ * with the given controllers standing in for the API routes.
+ */
+export async function createAuthTestApp(
+  controllers: Type[],
+): Promise<AuthTestApp> {
+  const idp = await FakeIdp.start();
+  const moduleRef = await Test.createTestingModule({
+    imports: [
+      ConfigModule.forRoot({
+        isGlobal: true,
+        ignoreEnvFile: true,
+        load: [() => idp.env],
+      }),
+      AuthModule,
+    ],
+    controllers,
+  }).compile();
+
+  const app = moduleRef.createNestApplication<INestApplication<App>>();
+  await app.init();
+
+  return {
+    app,
+    idp,
+    get: (path, token) => {
+      const req = request(app.getHttpServer()).get(path);
+      return token ? req.set('Authorization', `Bearer ${token}`) : req;
+    },
+    close: async () => {
+      await app.close();
+      await idp.stop();
+    },
+  };
+}

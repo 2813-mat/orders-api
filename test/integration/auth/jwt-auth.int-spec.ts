@@ -1,14 +1,11 @@
-import { Controller, Get, INestApplication } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
-import { Test } from '@nestjs/testing';
+import { Controller, Get } from '@nestjs/common';
 import { SignJWT } from 'jose';
 import request from 'supertest';
-import { App } from 'supertest/types';
-import { AuthModule } from '../../../src/auth/auth.module';
 import { AuthenticatedUser } from '../../../src/auth/authenticated-user';
 import { CurrentUser } from '../../../src/auth/decorators/current-user.decorator';
 import { Public } from '../../../src/auth/decorators/public.decorator';
 import { UserType } from '../../../src/users/user-type.enum';
+import { AuthTestApp, createAuthTestApp } from '../../support/auth-test-app';
 import { FakeIdp } from '../../support/fake-idp';
 
 @Controller('probe')
@@ -29,36 +26,17 @@ const base64url = (value: object) =>
   Buffer.from(JSON.stringify(value)).toString('base64url');
 
 describe('JWT authentication (real JwtStrategy + JWKS)', () => {
+  let t: AuthTestApp;
   let idp: FakeIdp;
-  let app: INestApplication<App>;
 
   beforeAll(async () => {
-    idp = await FakeIdp.start();
-    const moduleRef = await Test.createTestingModule({
-      imports: [
-        ConfigModule.forRoot({
-          isGlobal: true,
-          ignoreEnvFile: true,
-          load: [() => idp.env],
-        }),
-        AuthModule,
-      ],
-      controllers: [ProbeController],
-    }).compile();
-
-    app = moduleRef.createNestApplication();
-    await app.init();
+    t = await createAuthTestApp([ProbeController]);
+    idp = t.idp;
   });
 
-  afterAll(async () => {
-    await app.close();
-    await idp.stop();
-  });
+  afterAll(() => t.close());
 
-  const get = (path: string, token?: string) => {
-    const req = request(app.getHttpServer()).get(path);
-    return token ? req.set('Authorization', `Bearer ${token}`) : req;
-  };
+  const get = (path: string, token?: string) => t.get(path, token);
 
   it('rejects a request without a token', async () => {
     await get('/probe/me').expect(401);
@@ -153,7 +131,7 @@ describe('JWT authentication (real JwtStrategy + JWKS)', () => {
 
   it('rejects a malformed Authorization header', async () => {
     const token = await idp.signToken();
-    await request(app.getHttpServer())
+    await request(t.app.getHttpServer())
       .get('/probe/me')
       .set('Authorization', `Token ${token}`)
       .expect(401);
