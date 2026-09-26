@@ -1,4 +1,4 @@
-import { validateEnv } from './env.validation';
+import { validateEnv } from '../../../src/config/env.validation';
 
 const validEnv = {
   DB_HOST: 'mysql',
