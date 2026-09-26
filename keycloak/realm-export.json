@@ -1,0 +1,87 @@
+{
+  "realm": "orders",
+  "enabled": true,
+  "displayName": "Orders",
+  "sslRequired": "none",
+  "accessTokenLifespan": 900,
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "roles": {
+    "realm": [
+      {
+        "name": "ADMIN",
+        "description": "Pode ver todos os pedidos e reprocessar pedidos FAILED"
+      },
+      {
+        "name": "USER",
+        "description": "Pode criar pedidos e consultar os próprios pedidos"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "orders-api",
+      "name": "Orders API",
+      "description": "Resource server da API de pedidos. Service account para chamadas entre serviços; password grant habilitado só para a demo.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "orders-api-secret",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "fullScopeAllowed": true,
+      "protocolMappers": [
+        {
+          "name": "audience-orders-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "orders-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "id": "8d1c2a4e-6f0b-4c1e-9a3d-1f2e3a4b5c01",
+      "username": "admin",
+      "email": "admin@orders.local",
+      "emailVerified": true,
+      "firstName": "Admin",
+      "lastName": "Orders",
+      "enabled": true,
+      "credentials": [
+        { "type": "password", "value": "admin123", "temporary": false }
+      ],
+      "realmRoles": ["ADMIN", "USER"]
+    },
+    {
+      "id": "8d1c2a4e-6f0b-4c1e-9a3d-1f2e3a4b5c02",
+      "username": "user",
+      "email": "user@orders.local",
+      "emailVerified": true,
+      "firstName": "User",
+      "lastName": "Orders",
+      "enabled": true,
+      "credentials": [
+        { "type": "password", "value": "user123", "temporary": false }
+      ],
+      "realmRoles": ["USER"]
+    },
+    {
+      "id": "8d1c2a4e-6f0b-4c1e-9a3d-1f2e3a4b5c03",
+      "username": "service-account-orders-api",
+      "enabled": true,
+      "serviceAccountClientId": "orders-api",
+      "realmRoles": ["USER"]
+    }
+  ]
+}

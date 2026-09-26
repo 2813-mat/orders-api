@@ -34,5 +34,27 @@ services:
       mysql: { condition: service_healthy }
       redis: { condition: service_healthy }
 
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.4
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      # Fixes the token issuer to the public URL, no matter whether the token was
+      # requested from the host (localhost:8080) or from inside the network (keycloak:8080).
+      KC_HOSTNAME: http://localhost:8080
+      # Lets the API reach Keycloak via keycloak:8080 (JWKS) while the issuer stays public.
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HEALTH_ENABLED: "true"
+    ports: ["8080:8080"]
+    volumes:
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    healthcheck:
+      # The image has no curl: plain HTTP over bash /dev/tcp on the management port.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q 'UP' <&3"]
+      interval: 10s
+      retries: 30
+      start_period: 30s
+
 volumes:
   mysql_data:
