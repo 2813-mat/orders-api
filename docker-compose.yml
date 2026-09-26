@@ -24,7 +24,11 @@ services:
   api:
     build: .
     env_file: .env
-    command: node dist/main.js
+    environment:
+      DB_HOST: mysql
+      REDIS_HOST: redis
+      KEYCLOAK_JWKS_URI: http://keycloak:8080/realms/orders/protocol/openid-connect/certs
+    command: sh -c "node dist/database/run-migrations.js && node dist/database/seeds/run-seed.js && node dist/main.js"
     ports: ["3000:3000"]
     depends_on:
       mysql: { condition: service_healthy }
