@@ -17,7 +17,8 @@
     "start:prod": "node dist/main",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "jest": "node --experimental-vm-modules --disable-warning=ExperimentalWarning node_modules/jest/bin/jest.js",
-    "test": "npm run jest --",
+    "test": "npm run jest -- --selectProjects unit",
+    "test:int": "npm run jest -- --selectProjects integration --runInBand",
     "test:watch": "npm run jest -- --watch",
     "test:cov": "npm run jest -- --coverage",
     "test:debug": "node --inspect-brk --experimental-vm-modules --disable-warning=ExperimentalWarning node_modules/jest/bin/jest.js --runInBand",
@@ -87,23 +88,45 @@
     "typescript-eslint": "^8.20.0"
   },
   "jest": {
-    "moduleFileExtensions": [
-      "js",
-      "json",
-      "ts"
+    "projects": [
+      {
+        "displayName": "unit",
+        "rootDir": ".",
+        "roots": [
+          "<rootDir>/test/unit"
+        ],
+        "testRegex": ".*\\.spec\\.ts$",
+        "moduleFileExtensions": [
+          "js",
+          "json",
+          "ts"
+        ],
+        "transform": {
+          "^.+\\.(t|j)s$": "ts-jest"
+        },
+        "testEnvironment": "node"
+      },
+      {
+        "displayName": "integration",
+        "rootDir": ".",
+        "roots": [
+          "<rootDir>/test/integration"
+        ],
+        "testRegex": ".*\\.int-spec\\.ts$",
+        "moduleFileExtensions": [
+          "js",
+          "json",
+          "ts"
+        ],
+        "transform": {
+          "^.+\\.(t|j)s$": "ts-jest"
+        },
+        "testEnvironment": "node"
+      }
     ],
-    "rootDir": ".",
-    "roots": [
-      "<rootDir>/test/unit"
-    ],
-    "testRegex": ".*\\.spec\\.ts$",
-    "transform": {
-      "^.+\\.(t|j)s$": "ts-jest"
-    },
     "collectCoverageFrom": [
       "src/**/*.(t|j)s"
     ],
-    "coverageDirectory": "coverage",
-    "testEnvironment": "node"
+    "coverageDirectory": "coverage"
   }
 }

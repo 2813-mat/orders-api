@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuthModule } from './auth/auth.module';
 import { EnvironmentVariables, validateEnv } from './config/env.validation';
 import { buildTypeOrmOptions } from './database/typeorm.options';
 
@@ -22,6 +23,7 @@ import { buildTypeOrmOptions } from './database/typeorm.options';
           DB_NAME: config.get('DB_NAME', { infer: true }),
         }),
     }),
+    AuthModule,
   ],
 })
 export class AppModule {}
