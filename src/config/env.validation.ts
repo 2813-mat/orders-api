@@ -33,6 +33,8 @@ export const envSchema = z
     KEYCLOAK_JWKS_URI: httpUrl,
     KEYCLOAK_AUDIENCE: z.string().min(1),
     KEYCLOAK_CLIENT_ID: z.string().min(1),
+    /** Min time between two writes of the same user's local profile. */
+    USER_SYNC_INTERVAL_MS: z.coerce.number().int().min(0).default(300_000),
 
     LOG_LEVEL: z
       .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])

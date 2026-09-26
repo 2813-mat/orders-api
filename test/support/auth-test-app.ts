@@ -1,4 +1,4 @@
-import { INestApplication, Type } from '@nestjs/common';
+import { INestApplication, ModuleMetadata, Type } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
@@ -19,6 +19,10 @@ export interface AuthTestApp {
  */
 export async function createAuthTestApp(
   controllers: Type[],
+  options: {
+    imports?: ModuleMetadata['imports'];
+    config?: Record<string, unknown>;
+  } = {},
 ): Promise<AuthTestApp> {
   const idp = await FakeIdp.start();
   const moduleRef = await Test.createTestingModule({
@@ -26,9 +30,10 @@ export async function createAuthTestApp(
       ConfigModule.forRoot({
         isGlobal: true,
         ignoreEnvFile: true,
-        load: [() => idp.env],
+        load: [() => ({ ...idp.env, ...options.config })],
       }),
       AuthModule,
+      ...(options.imports ?? []),
     ],
     controllers,
   }).compile();
