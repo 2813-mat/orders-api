@@ -1,0 +1,34 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: orders
+      MYSQL_USER: orders
+      MYSQL_PASSWORD: orders
+      MYSQL_ROOT_PASSWORD: root
+    ports: ["3306:3306"]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 5s
+      retries: 20
+    volumes: [mysql_data:/var/lib/mysql]
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 20
+
+  api:
+    build: .
+    env_file: .env
+    command: node dist/main.js
+    ports: ["3000:3000"]
+    depends_on:
+      mysql: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+volumes:
+  mysql_data:
