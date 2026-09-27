@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Job, Queue } from 'bullmq';
 import { currentCorrelationId } from '../../../../src/common/correlation/correlation-id';
@@ -18,6 +19,11 @@ import {
 } from '../../../../src/orders/queue/queue.constants';
 
 describe('OrderProcessor (orchestration)', () => {
+  // The processor logs every step; the assertions here are about calls.
+  beforeAll(() => {
+    Logger.overrideLogger(false);
+  });
+
   const orderId = 'order-1';
 
   let processing: jest.Mocked<

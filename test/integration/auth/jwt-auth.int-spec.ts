@@ -1,7 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
 import { SignJWT } from 'jose';
 import request from 'supertest';
-import { AuthenticatedUser } from '../../../src/auth/authenticated-user';
+import type { AuthenticatedUser } from '../../../src/auth/authenticated-user';
 import { CurrentUser } from '../../../src/auth/decorators/current-user.decorator';
 import { Public } from '../../../src/auth/decorators/public.decorator';
 import { UserType } from '../../../src/users/user-type.enum';
