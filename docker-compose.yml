@@ -8,7 +8,10 @@ services:
       MYSQL_ROOT_PASSWORD: root
     ports: ["3306:3306"]
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      # Over TCP, not the socket: on the first start (empty volume) the image
+      # runs a temporary socket-only server to create the database; a socket
+      # ping would report healthy before port 3306 accepts connections.
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--protocol=TCP", "-uroot", "-proot"]
       interval: 5s
       retries: 20
     volumes: [mysql_data:/var/lib/mysql]
@@ -29,6 +32,9 @@ services:
       REDIS_HOST: redis
       KEYCLOAK_JWKS_URI: http://keycloak:8080/realms/orders/protocol/openid-connect/certs
     command: sh -c "node dist/database/run-migrations.js && node dist/database/seeds/run-seed.js && node dist/main.js"
+    # A transient failure (e.g. migrations racing the database) retries
+    # instead of leaving the API down; migrations and seed are idempotent.
+    restart: unless-stopped
     ports: ["3000:3000"]
     depends_on:
       mysql: { condition: service_healthy }
