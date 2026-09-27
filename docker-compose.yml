@@ -48,6 +48,19 @@ services:
       mysql: { condition: service_healthy }
       redis: { condition: service_healthy }
 
+  # Consumes the orders queue. Scales out: docker compose up --scale worker=3
+  worker:
+    build: .
+    env_file: .env
+    environment:
+      DB_HOST: mysql
+      REDIS_HOST: redis
+    command: node dist/worker.js
+    restart: unless-stopped
+    depends_on:
+      mysql: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
   keycloak:
     image: quay.io/keycloak/keycloak:26.7.4
     command: start-dev --import-realm
