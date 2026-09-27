@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
 import { buildTypeOrmOptions } from '../../../src/database/typeorm.options';
 import { ORDERS_QUEUE } from '../../../src/orders/queue/queue.constants';
-import { OutboxEvent } from '../../../src/outbox/outbox-event.entity';
+import { OutboxEvent } from '../../../src/database/entities/outbox-event.entity';
 import { OutboxStatus } from '../../../src/outbox/outbox-status.enum';
 import { OutboxRelayModule } from '../../../src/outbox/outbox-relay.module';
 import { OutboxRelay } from '../../../src/outbox/outbox.relay';

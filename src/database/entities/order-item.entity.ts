@@ -7,8 +7,8 @@ import {
   PrimaryGeneratedColumn,
   type Relation,
 } from 'typeorm';
-import { decimalTransformer } from '../../database/transformers/decimal.transformer';
-import { Product } from '../../products/product.entity';
+import { decimalTransformer } from '../transformers/decimal.transformer';
+import { Product } from './product.entity';
 import { Order } from './order.entity';
 
 @Entity('order_items')

@@ -7,7 +7,7 @@ import { DataSource, EntityManager, In } from 'typeorm';
 import { EnvironmentVariables } from '../config/env.validation';
 import { ORDER_CREATED_EVENT } from '../orders/domain/events/order-created.event';
 import { ORDERS_QUEUE } from '../orders/queue/queue.constants';
-import { OutboxEvent } from './outbox-event.entity';
+import { OutboxEvent } from '../database/entities/outbox-event.entity';
 import { OutboxStatus } from './outbox-status.enum';
 import { nextRelayDelay, RelayTickOutcome } from './relay-delay';
 

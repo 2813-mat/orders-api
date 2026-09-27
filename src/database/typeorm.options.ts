@@ -1,12 +1,12 @@
 import { join } from 'node:path';
 import { DataSourceOptions } from 'typeorm';
 import { EnvironmentVariables } from '../config/env.validation';
-import { OrderItem } from '../orders/entities/order-item.entity';
-import { Order } from '../orders/entities/order.entity';
-import { StockReservation } from '../orders/entities/stock-reservation.entity';
-import { OutboxEvent } from '../outbox/outbox-event.entity';
-import { Product } from '../products/product.entity';
-import { User } from '../users/user.entity';
+import { OrderItem } from './entities/order-item.entity';
+import { Order } from './entities/order.entity';
+import { StockReservation } from './entities/stock-reservation.entity';
+import { OutboxEvent } from './entities/outbox-event.entity';
+import { Product } from './entities/product.entity';
+import { User } from './entities/user.entity';
 
 export const ENTITIES = [
   Product,

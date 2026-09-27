@@ -8,9 +8,9 @@ import {
   PrimaryColumn,
   type Relation,
 } from 'typeorm';
-import { CreatedAtColumn, UpdatedAtColumn } from '../../database/columns';
-import { decimalTransformer } from '../../database/transformers/decimal.transformer';
-import { OrderStatus } from '../domain/order-status.enum';
+import { CreatedAtColumn, UpdatedAtColumn } from '../columns';
+import { decimalTransformer } from '../transformers/decimal.transformer';
+import { OrderStatus } from '../../orders/domain/order-status.enum';
 import { OrderItem } from './order-item.entity';
 
 @Entity('orders')

@@ -6,16 +6,16 @@ import { DataSource } from 'typeorm';
 import { seedProducts } from '../../src/database/seeds/products.seed';
 import { OrderStatus } from '../../src/orders/domain/order-status.enum';
 import { OrderPage, OrderResponse } from '../../src/orders/dto/order.response';
-import { Order } from '../../src/orders/entities/order.entity';
-import { StockReservation } from '../../src/orders/entities/stock-reservation.entity';
+import { Order } from '../../src/database/entities/order.entity';
+import { StockReservation } from '../../src/database/entities/stock-reservation.entity';
 import {
   OrderDeadLetterData,
   ORDERS_DEAD_LETTER_QUEUE,
   ORDERS_QUEUE,
 } from '../../src/orders/queue/queue.constants';
-import { OutboxEvent } from '../../src/outbox/outbox-event.entity';
-import { Product } from '../../src/products/product.entity';
-import { User } from '../../src/users/user.entity';
+import { OutboxEvent } from '../../src/database/entities/outbox-event.entity';
+import { Product } from '../../src/database/entities/product.entity';
+import { User } from '../../src/database/entities/user.entity';
 import { UserType } from '../../src/users/user-type.enum';
 import { truncate } from '../support/database';
 import { E2eStack, startE2eStack } from '../support/e2e-stack';

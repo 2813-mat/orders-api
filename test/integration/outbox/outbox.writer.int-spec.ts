@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
 import { buildTypeOrmOptions } from '../../../src/database/typeorm.options';
 import { OrderCreatedEvent } from '../../../src/orders/domain/events/order-created.event';
-import { OutboxEvent } from '../../../src/outbox/outbox-event.entity';
+import { OutboxEvent } from '../../../src/database/entities/outbox-event.entity';
 import { OutboxStatus } from '../../../src/outbox/outbox-status.enum';
 import { OutboxModule } from '../../../src/outbox/outbox.module';
 import { OutboxWriter } from '../../../src/outbox/outbox.writer';

@@ -12,14 +12,14 @@ import {
 } from '../common/pagination/page';
 import { currentCorrelationId } from '../common/correlation/correlation-id';
 import { OutboxWriter } from '../outbox/outbox.writer';
-import { Product } from '../products/product.entity';
+import { Product } from '../database/entities/product.entity';
 import { UnknownProductsError } from './domain/errors';
 import { OrderCreatedEvent } from './domain/events/order-created.event';
 import { calculateOrderTotals } from './domain/order-total';
 import { OrderStatus } from './domain/order-status.enum';
 import { CreateOrderDto } from './dto/create-order.dto';
-import { OrderItem } from './entities/order-item.entity';
-import { Order } from './entities/order.entity';
+import { OrderItem } from '../database/entities/order-item.entity';
+import { Order } from '../database/entities/order.entity';
 
 export type ReprocessResult =
   | { outcome: 'REQUEUED'; order: Order }

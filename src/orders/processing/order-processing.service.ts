@@ -1,13 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, EntityManager } from 'typeorm';
-import { Product } from '../../products/product.entity';
+import { Product } from '../../database/entities/product.entity';
 import { InsufficientStockError } from '../domain/errors';
 import { OrderStatus } from '../domain/order-status.enum';
 import { toReservationLines } from '../domain/reservation-lines';
-import { OrderItem } from '../entities/order-item.entity';
-import { Order } from '../entities/order.entity';
-import { StockReservation } from '../entities/stock-reservation.entity';
+import { OrderItem } from '../../database/entities/order-item.entity';
+import { Order } from '../../database/entities/order.entity';
+import { StockReservation } from '../../database/entities/stock-reservation.entity';
 
 export enum ReservationOutcome {
   PROCESSED = 'PROCESSED',

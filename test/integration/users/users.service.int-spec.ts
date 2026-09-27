@@ -6,7 +6,7 @@ import { DataSource } from 'typeorm';
 import { AuthenticatedUser } from '../../../src/auth/authenticated-user';
 import { Role } from '../../../src/auth/role.enum';
 import { buildTypeOrmOptions } from '../../../src/database/typeorm.options';
-import { User } from '../../../src/users/user.entity';
+import { User } from '../../../src/database/entities/user.entity';
 import { UserType } from '../../../src/users/user-type.enum';
 import { UsersModule } from '../../../src/users/users.module';
 import { UsersService } from '../../../src/users/users.service';

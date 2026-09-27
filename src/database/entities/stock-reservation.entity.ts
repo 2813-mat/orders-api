@@ -8,8 +8,8 @@ import {
   Unique,
   type Relation,
 } from 'typeorm';
-import { CreatedAtColumn } from '../../database/columns';
-import { Product } from '../../products/product.entity';
+import { CreatedAtColumn } from '../columns';
+import { Product } from './product.entity';
 import { Order } from './order.entity';
 
 /**

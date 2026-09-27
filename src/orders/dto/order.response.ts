@@ -1,7 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { PageMeta } from '../../common/pagination/page';
 import { OrderStatus } from '../domain/order-status.enum';
-import { Order } from '../entities/order.entity';
+import { Order } from '../../database/entities/order.entity';
 
 export class OrderItemResponse {
   @ApiProperty({ example: 'Mouse' })

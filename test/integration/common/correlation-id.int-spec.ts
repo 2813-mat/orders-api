@@ -7,9 +7,9 @@ import { validationPipeProvider } from '../../../src/common/validation';
 import { buildTypeOrmOptions } from '../../../src/database/typeorm.options';
 import { seedProducts } from '../../../src/database/seeds/products.seed';
 import { OrderResponse } from '../../../src/orders/dto/order.response';
-import { Order } from '../../../src/orders/entities/order.entity';
+import { Order } from '../../../src/database/entities/order.entity';
 import { OrdersModule } from '../../../src/orders/orders.module';
-import { OutboxEvent } from '../../../src/outbox/outbox-event.entity';
+import { OutboxEvent } from '../../../src/database/entities/outbox-event.entity';
 import { AuthTestApp, createAuthTestApp } from '../../support/auth-test-app';
 import { testDatabaseEnv, truncate } from '../../support/database';
 

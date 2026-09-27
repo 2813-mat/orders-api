@@ -6,12 +6,12 @@ import { buildTypeOrmOptions } from '../../../src/database/typeorm.options';
 import { seedProducts } from '../../../src/database/seeds/products.seed';
 import { OrderResponse } from '../../../src/orders/dto/order.response';
 import { OrderStatus } from '../../../src/orders/domain/order-status.enum';
-import { OrderItem } from '../../../src/orders/entities/order-item.entity';
-import { Order } from '../../../src/orders/entities/order.entity';
+import { OrderItem } from '../../../src/database/entities/order-item.entity';
+import { Order } from '../../../src/database/entities/order.entity';
 import { OrdersModule } from '../../../src/orders/orders.module';
-import { OutboxEvent } from '../../../src/outbox/outbox-event.entity';
+import { OutboxEvent } from '../../../src/database/entities/outbox-event.entity';
 import { OutboxStatus } from '../../../src/outbox/outbox-status.enum';
-import { Product } from '../../../src/products/product.entity';
+import { Product } from '../../../src/database/entities/product.entity';
 import { AuthTestApp, createAuthTestApp } from '../../support/auth-test-app';
 import { testDatabaseEnv, truncate } from '../../support/database';
 

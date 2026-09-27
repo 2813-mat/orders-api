@@ -4,7 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AuthenticatedUser } from '../auth/authenticated-user';
 import { EnvironmentVariables } from '../config/env.validation';
-import { User } from './user.entity';
+import { User } from '../database/entities/user.entity';
 
 /** Bounds the in-memory throttle map; the oldest entries are dropped first. */
 const MAX_TRACKED_SUBS = 10_000;

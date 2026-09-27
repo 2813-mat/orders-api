@@ -8,8 +8,8 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { DataSource } from 'typeorm';
 import { buildTypeOrmOptions } from '../../../../src/database/typeorm.options';
 import { OrderStatus } from '../../../../src/orders/domain/order-status.enum';
-import { OrderItem } from '../../../../src/orders/entities/order-item.entity';
-import { Order } from '../../../../src/orders/entities/order.entity';
+import { OrderItem } from '../../../../src/database/entities/order-item.entity';
+import { Order } from '../../../../src/database/entities/order.entity';
 import { OrderProcessingModule } from '../../../../src/orders/processing/order-processing.module';
 import {
   ORDER_CREATED_JOB,
@@ -19,7 +19,7 @@ import {
   ORDERS_DEAD_LETTER_QUEUE,
   ORDERS_QUEUE,
 } from '../../../../src/orders/queue/queue.constants';
-import { Product } from '../../../../src/products/product.entity';
+import { Product } from '../../../../src/database/entities/product.entity';
 import { testDatabaseEnv, truncate } from '../../../support/database';
 import { testRedisEnv } from '../../../support/redis';
 

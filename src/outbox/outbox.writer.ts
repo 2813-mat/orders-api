@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { EntityManager } from 'typeorm';
 import { DomainEvent } from '../common/events/domain-event';
-import { OutboxEvent } from './outbox-event.entity';
+import { OutboxEvent } from '../database/entities/outbox-event.entity';
 
 @Injectable()
 export class OutboxWriter {

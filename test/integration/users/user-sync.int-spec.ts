@@ -3,7 +3,7 @@ import { getDataSourceToken, TypeOrmModule } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { Public } from '../../../src/auth/decorators/public.decorator';
 import { buildTypeOrmOptions } from '../../../src/database/typeorm.options';
-import { User } from '../../../src/users/user.entity';
+import { User } from '../../../src/database/entities/user.entity';
 import { UserType } from '../../../src/users/user-type.enum';
 import { UsersModule } from '../../../src/users/users.module';
 import { AuthTestApp, createAuthTestApp } from '../../support/auth-test-app';

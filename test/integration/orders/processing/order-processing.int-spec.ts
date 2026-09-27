@@ -2,14 +2,14 @@ import { randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
 import { InsufficientStockError } from '../../../../src/orders/domain/errors';
 import { OrderStatus } from '../../../../src/orders/domain/order-status.enum';
-import { OrderItem } from '../../../../src/orders/entities/order-item.entity';
-import { Order } from '../../../../src/orders/entities/order.entity';
-import { StockReservation } from '../../../../src/orders/entities/stock-reservation.entity';
+import { OrderItem } from '../../../../src/database/entities/order-item.entity';
+import { Order } from '../../../../src/database/entities/order.entity';
+import { StockReservation } from '../../../../src/database/entities/stock-reservation.entity';
 import {
   OrderProcessingService,
   ReservationOutcome,
 } from '../../../../src/orders/processing/order-processing.service';
-import { Product } from '../../../../src/products/product.entity';
+import { Product } from '../../../../src/database/entities/product.entity';
 import { createTestDataSource, truncate } from '../../../support/database';
 
 describe('OrderProcessingService (real MySQL, real concurrency)', () => {

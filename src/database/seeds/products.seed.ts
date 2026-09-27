@@ -1,5 +1,5 @@
 import { EntityManager } from 'typeorm';
-import { Product } from '../../products/product.entity';
+import { Product } from '../entities/product.entity';
 
 export const INITIAL_STOCK = 5;
 

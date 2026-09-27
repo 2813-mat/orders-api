@@ -1,5 +1,5 @@
 import { Column, Entity, PrimaryGeneratedColumn, Unique } from 'typeorm';
-import { CreatedAtColumn, UpdatedAtColumn } from '../database/columns';
+import { CreatedAtColumn, UpdatedAtColumn } from '../columns';
 
 @Entity('products')
 @Unique('uq_products_name', ['name'])
