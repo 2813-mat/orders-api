@@ -20,6 +20,11 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { OrderItem } from './entities/order-item.entity';
 import { Order } from './entities/order.entity';
 
+export type ReprocessResult =
+  | { outcome: 'REQUEUED'; order: Order }
+  | { outcome: 'NOT_FAILED'; status: OrderStatus }
+  | { outcome: 'NOT_FOUND' };
+
 @Injectable()
 export class OrdersService {
   constructor(
@@ -121,6 +126,46 @@ export class OrdersService {
     }
 
     return { data: orders, meta: buildPageMeta(request, total) };
+  }
+
+  /**
+   * Puts a FAILED order back to PENDING and records a new `order.created`
+   * event, in one transaction. The UPDATE only matches a FAILED row, so two
+   * simultaneous calls requeue once: the second waits for the row lock, then
+   * matches nothing. The new event has a new id, hence a new jobId that does
+   * not collide with the old job still in BullMQ's failed set. Safe for stock:
+   * a FAILED order never holds a reservation (its transaction rolled back).
+   */
+  async reprocess(id: string): Promise<ReprocessResult> {
+    return this.dataSource.transaction(async (manager) => {
+      const { affected } = await manager.update(
+        Order,
+        { id, status: OrderStatus.FAILED },
+        { status: OrderStatus.PENDING, failureReason: null },
+      );
+      if (!affected) {
+        const current = await manager.findOne(Order, {
+          select: { id: true, status: true },
+          where: { id },
+        });
+        return current
+          ? { outcome: 'NOT_FAILED', status: current.status }
+          : { outcome: 'NOT_FOUND' };
+      }
+
+      const order = await manager.findOneOrFail(Order, {
+        where: { id },
+        relations: { items: true },
+        order: { items: { id: 'ASC' } },
+      });
+      // Same correlation id as the original request: the whole life of the
+      // order stays traceable under one id.
+      await this.outboxWriter.write(
+        manager,
+        new OrderCreatedEvent(order.id, order.correlationId ?? randomUUID()),
+      );
+      return { outcome: 'REQUEUED', order };
+    });
   }
 
   /** ADMIN sees every order; anyone else only the ones they created. */

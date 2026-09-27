@@ -1,7 +1,10 @@
 import {
   Body,
+  ConflictException,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   NotFoundException,
   Param,
   ParseUUIDPipe,
@@ -59,5 +62,28 @@ export class OrdersController {
       throw new NotFoundException(`Order ${id} not found`);
     }
     return toOrderResponse(order);
+  }
+
+  /**
+   * ADMIN only. 202: the order is PENDING again and will be picked up by the
+   * worker; follow it through GET /orders/:id.
+   */
+  @Post(':id/reprocess')
+  @Roles(Role.ADMIN)
+  @HttpCode(HttpStatus.ACCEPTED)
+  async reprocess(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<OrderResponse> {
+    const result = await this.orders.reprocess(id);
+    switch (result.outcome) {
+      case 'REQUEUED':
+        return toOrderResponse(result.order);
+      case 'NOT_FAILED':
+        throw new ConflictException(
+          `Only FAILED orders can be reprocessed; order ${id} is ${result.status}`,
+        );
+      case 'NOT_FOUND':
+        throw new NotFoundException(`Order ${id} not found`);
+    }
   }
 }
