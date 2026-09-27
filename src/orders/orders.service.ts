@@ -1,8 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
-import { DataSource, In, Repository } from 'typeorm';
+import { DataSource, FindOptionsWhere, In, Repository } from 'typeorm';
 import { AuthenticatedUser } from '../auth/authenticated-user';
+import { Role } from '../auth/role.enum';
+import {
+  buildPageMeta,
+  Page,
+  PageRequest,
+  pageOffset,
+} from '../common/pagination/page';
 import { OutboxWriter } from '../outbox/outbox.writer';
 import { Product } from '../products/product.entity';
 import { UnknownProductsError } from './domain/errors';
@@ -17,6 +24,10 @@ import { Order } from './entities/order.entity';
 export class OrdersService {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
+    @InjectRepository(Order)
+    private readonly orders: Repository<Order>,
+    @InjectRepository(OrderItem)
+    private readonly items: Repository<OrderItem>,
     @InjectRepository(Product)
     private readonly products: Repository<Product>,
     private readonly outboxWriter: OutboxWriter,
@@ -70,6 +81,51 @@ export class OrdersService {
       );
       return order;
     });
+  }
+
+  /**
+   * `null` both when the order doesn't exist and when it belongs to someone
+   * else: a USER can't tell another user's order id from a made-up one.
+   */
+  async findOne(id: string, user: AuthenticatedUser): Promise<Order | null> {
+    return this.orders.findOne({
+      where: { id, ...this.visibleTo(user) },
+      relations: { items: true },
+      order: { items: { id: 'ASC' } },
+    });
+  }
+
+  /**
+   * Newest first. Two queries (page of orders, then their items) instead of
+   * a join: LIMIT on a joined result would count item rows, not orders.
+   */
+  async list(
+    request: PageRequest,
+    user: AuthenticatedUser,
+  ): Promise<Page<Order>> {
+    const [orders, total] = await this.orders.findAndCount({
+      where: this.visibleTo(user),
+      order: { createdAt: 'DESC', id: 'DESC' },
+      skip: pageOffset(request),
+      take: request.limit,
+    });
+
+    const items = orders.length
+      ? await this.items.find({
+          where: { orderId: In(orders.map((order) => order.id)) },
+          order: { id: 'ASC' },
+        })
+      : [];
+    for (const order of orders) {
+      order.items = items.filter((item) => item.orderId === order.id);
+    }
+
+    return { data: orders, meta: buildPageMeta(request, total) };
+  }
+
+  /** ADMIN sees every order; anyone else only the ones they created. */
+  private visibleTo(user: AuthenticatedUser): FindOptionsWhere<Order> {
+    return user.roles.includes(Role.ADMIN) ? {} : { createdBySub: user.sub };
   }
 
   /**
