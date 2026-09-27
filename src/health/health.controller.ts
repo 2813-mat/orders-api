@@ -1,4 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   HealthCheck,
   HealthCheckService,
@@ -6,6 +7,7 @@ import {
 } from '@nestjs/terminus';
 import { Public } from '../auth/decorators/public.decorator';
 
+@ApiTags('health')
 @Controller('health')
 export class HealthController {
   constructor(
@@ -21,6 +23,11 @@ export class HealthController {
   @Public()
   @Get()
   @HealthCheck()
+  @ApiOperation({
+    summary: 'Readiness: 200 if MySQL answers, 503 otherwise',
+    description:
+      'Public. Redis is deliberately not checked: creating orders does not need it.',
+  })
   check() {
     return this.health.check([
       () => this.db.pingCheck('database').withTimeout(1500),
