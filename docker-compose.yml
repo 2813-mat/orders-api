@@ -33,9 +33,16 @@ services:
     depends_on:
       mysql: { condition: service_healthy }
       redis: { condition: service_healthy }
+    # Healthy = migrations and seed done and MySQL reachable (GET /health).
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
 
   # Publishes committed outbox events to BullMQ. Same image, other entrypoint.
-  # Starts alongside the API: until its migrations have run, ticks fail and back off.
+  # Waits for a healthy API, i.e. for the migrations to have run.
   relay:
     build: .
     env_file: .env
@@ -47,6 +54,7 @@ services:
     depends_on:
       mysql: { condition: service_healthy }
       redis: { condition: service_healthy }
+      api: { condition: service_healthy }
 
   # Consumes the orders queue. Scales out: docker compose up --scale worker=3
   worker:
@@ -60,6 +68,7 @@ services:
     depends_on:
       mysql: { condition: service_healthy }
       redis: { condition: service_healthy }
+      api: { condition: service_healthy }
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.7.4

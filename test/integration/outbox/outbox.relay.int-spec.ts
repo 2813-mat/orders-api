@@ -255,6 +255,34 @@ describe('OutboxRelay (real MySQL + Redis)', () => {
     }
   });
 
+  describe('backlog', () => {
+    it('is empty when everything was published', async () => {
+      await insertEvents(2, { status: OutboxStatus.PUBLISHED });
+
+      await expect(ctx.relay.backlog()).resolves.toEqual({
+        pending: 0,
+        failed: 0,
+        oldestPendingAgeMs: null,
+      });
+    });
+
+    it('counts pending and failed events and ages the oldest pending one', async () => {
+      const [oldest] = await insertEvents(2);
+      await insertEvents(1, { status: OutboxStatus.FAILED });
+      await insertEvents(1, { status: OutboxStatus.PUBLISHED });
+      await ctx.dataSource.query(
+        'UPDATE outbox_events SET created_at = NOW(3) - INTERVAL 5 MINUTE WHERE id = ?',
+        [oldest.id],
+      );
+
+      const backlog = await ctx.relay.backlog();
+
+      expect(backlog).toMatchObject({ pending: 2, failed: 1 });
+      expect(backlog.oldestPendingAgeMs).toBeGreaterThanOrEqual(300_000);
+      expect(backlog.oldestPendingAgeMs).toBeLessThan(310_000);
+    });
+  });
+
   it('polls on its own once started and stops on shutdown', async () => {
     const running = await bootRelay();
     running.relay.start();

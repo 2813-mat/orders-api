@@ -15,8 +15,20 @@ export interface RelayBatchResult extends RelayTickOutcome {
   published: number;
 }
 
+export interface OutboxBacklog {
+  /** Events waiting to be published. */
+  pending: number;
+  /** Events the relay gave up on: need an operator. */
+  failed: number;
+  /** Age of the oldest PENDING event, by the database clock; null if none. */
+  oldestPendingAgeMs: number | null;
+}
+
 const MAX_BACKOFF_MS = 30_000;
 const LAST_ERROR_MAX_LENGTH = 500;
+const BACKLOG_REPORT_INTERVAL_MS = 30_000;
+/** An event older than this means orders are stuck before the queue. */
+const BACKLOG_WARN_AGE_MS = 60_000;
 
 /**
  * Moves committed outbox events to BullMQ. At-least-once: an event can be
@@ -36,6 +48,7 @@ export class OutboxRelay implements BeforeApplicationShutdown {
   private delayMs = 0;
   private timer?: NodeJS.Timeout;
   private currentTick?: Promise<void>;
+  private backlogTimer?: NodeJS.Timeout;
   private stopping = false;
 
   constructor(
@@ -63,13 +76,75 @@ export class OutboxRelay implements BeforeApplicationShutdown {
       `Relaying outbox every ${this.pollIntervalMs}ms (batch ${this.batchSize})`,
     );
     this.schedule(0);
+    this.backlogTimer = setInterval(
+      () => void this.reportBacklog(),
+      BACKLOG_REPORT_INTERVAL_MS,
+    );
   }
 
   /** Stops polling and lets an in-flight batch commit before queues close. */
   async beforeApplicationShutdown(): Promise<void> {
     this.stopping = true;
     clearTimeout(this.timer);
+    clearInterval(this.backlogTimer);
     await this.currentTick;
+  }
+
+  /**
+   * How far behind the relay is. A growing `oldestPendingAgeMs` is the first
+   * thing to look at when an order stays PENDING: it means the event never
+   * reached the queue (Redis down, relay stopped or failing).
+   */
+  async backlog(): Promise<OutboxBacklog> {
+    const [row] = await this.dataSource.query<
+      Array<{
+        pending: string | null;
+        failed: string | null;
+        oldestPendingAgeMs: string | null;
+      }>
+    >(
+      `SELECT SUM(status = ?) AS pending,
+              SUM(status = ?) AS failed,
+              TIMESTAMPDIFF(MICROSECOND,
+                            MIN(CASE WHEN status = ? THEN created_at END),
+                            NOW(3)) DIV 1000 AS oldestPendingAgeMs
+         FROM outbox_events
+        WHERE status IN (?, ?)`,
+      [
+        OutboxStatus.PENDING,
+        OutboxStatus.FAILED,
+        OutboxStatus.PENDING,
+        OutboxStatus.PENDING,
+        OutboxStatus.FAILED,
+      ],
+    );
+    return {
+      pending: Number(row.pending ?? 0),
+      failed: Number(row.failed ?? 0),
+      oldestPendingAgeMs:
+        row.oldestPendingAgeMs === null ? null : Number(row.oldestPendingAgeMs),
+    };
+  }
+
+  private async reportBacklog(): Promise<void> {
+    try {
+      const backlog = await this.backlog();
+      const stuck = (backlog.oldestPendingAgeMs ?? 0) > BACKLOG_WARN_AGE_MS;
+      const entry = {
+        event: 'outbox.backlog',
+        ...backlog,
+        msg: stuck ? 'Outbox events waiting for too long' : 'Outbox backlog',
+      };
+      if (stuck || backlog.failed > 0) {
+        this.logger.warn(entry);
+      } else {
+        this.logger.log(entry);
+      }
+    } catch (error) {
+      this.logger.error(
+        `Could not read the outbox backlog: ${describe(error)}`,
+      );
+    }
   }
 
   /**

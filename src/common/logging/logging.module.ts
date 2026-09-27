@@ -43,7 +43,10 @@ export class LoggingModule {
               genReqId: resolveCorrelationId,
               mixin: () => ({ correlationId: currentCorrelationId() }),
               redact: ['req.headers.authorization', 'req.headers.cookie'],
-              autoLogging: http,
+              // The compose healthcheck calls /health every 10s: keep it quiet.
+              autoLogging: http && {
+                ignore: (req) => req.url?.startsWith('/health') ?? false,
+              },
               // Human-friendly only on an interactive terminal; JSON in Docker.
               transport: process.stdout.isTTY
                 ? { target: 'pino-pretty', options: { singleLine: true } }

@@ -4,6 +4,7 @@ import { LoggingModule } from './common/logging/logging.module';
 import { validationPipeProvider } from './common/validation';
 import { AppConfigModule } from './config/app-config.module';
 import { DatabaseModule } from './database/database.module';
+import { HealthModule } from './health/health.module';
 import { OrdersModule } from './orders/orders.module';
 import { UsersModule } from './users/users.module';
 
@@ -15,6 +16,7 @@ import { UsersModule } from './users/users.module';
     AuthModule,
     UsersModule,
     OrdersModule,
+    HealthModule,
   ],
   providers: [validationPipeProvider],
 })
