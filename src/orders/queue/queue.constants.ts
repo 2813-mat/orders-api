@@ -1,7 +1,10 @@
+import { ORDER_CREATED_EVENT } from '../domain/events/order-created.event';
+
 export const ORDERS_QUEUE = 'orders';
 export const ORDERS_DEAD_LETTER_QUEUE = 'orders-dlq';
 
-export const ORDER_CREATED_JOB = 'order.created';
+/** The relay publishes each outbox event under its event type. */
+export const ORDER_CREATED_JOB = ORDER_CREATED_EVENT;
 export const ORDER_FAILED_JOB = 'order.failed';
 
 /**
