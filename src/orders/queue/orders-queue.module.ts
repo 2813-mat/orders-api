@@ -2,6 +2,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EnvironmentVariables } from '../../config/env.validation';
+import { QueueErrorLogger } from './queue-error.logger';
 import { ORDERS_DEAD_LETTER_QUEUE, ORDERS_QUEUE } from './queue.constants';
 import {
   buildOrdersJobOptions,
@@ -44,6 +45,7 @@ type Config = ConfigService<EnvironmentVariables, true>;
       },
     ),
   ],
+  providers: [QueueErrorLogger],
   exports: [BullModule],
 })
 export class OrdersQueueModule {}

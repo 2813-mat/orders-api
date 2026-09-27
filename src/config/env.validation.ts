@@ -28,6 +28,8 @@ export const envSchema = z
     OUTBOX_POLL_INTERVAL_MS: z.coerce.number().int().min(50).default(500),
     OUTBOX_BATCH_SIZE: z.coerce.number().int().min(1).max(1000).default(50),
     OUTBOX_MAX_ATTEMPTS: z.coerce.number().int().min(1).default(10),
+    /** BullMQ waits for Redis forever; the relay gives up on a publish after this. */
+    OUTBOX_PUBLISH_TIMEOUT_MS: z.coerce.number().int().min(100).default(5000),
 
     KEYCLOAK_ISSUER: httpUrl,
     KEYCLOAK_JWKS_URI: httpUrl,

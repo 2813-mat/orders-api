@@ -23,6 +23,7 @@ describe('validateEnv', () => {
       PROCESSING_MAX_MS: 2000,
       LOG_LEVEL: 'info',
       USER_SYNC_INTERVAL_MS: 300_000,
+      OUTBOX_PUBLISH_TIMEOUT_MS: 5000,
     });
   });
 
