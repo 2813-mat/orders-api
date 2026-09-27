@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
 import { DataSource, FindOptionsWhere, In, Repository } from 'typeorm';
@@ -10,6 +10,7 @@ import {
   PageRequest,
   pageOffset,
 } from '../common/pagination/page';
+import { currentCorrelationId } from '../common/correlation/correlation-id';
 import { OutboxWriter } from '../outbox/outbox.writer';
 import { Product } from '../products/product.entity';
 import { UnknownProductsError } from './domain/errors';
@@ -27,6 +28,8 @@ export type ReprocessResult =
 
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name);
+
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     @InjectRepository(Order)
@@ -53,9 +56,12 @@ export class OrdersService {
         unitPrice: item.price,
       })),
     );
-    const correlationId = randomUUID();
+    // The request's id (header or generated), so the order, its outbox event,
+    // the job and the worker's logs all share it. Outside a request (tests,
+    // scripts) there is none: start a new one.
+    const correlationId = currentCorrelationId() ?? randomUUID();
 
-    return this.dataSource.transaction(async (manager) => {
+    const order = await this.dataSource.transaction(async (manager) => {
       const order = await manager.save(
         manager.create(Order, {
           customerName: input.customerName,
@@ -86,6 +92,16 @@ export class OrdersService {
       );
       return order;
     });
+
+    this.logger.log({
+      event: 'order.created',
+      orderId: order.id,
+      total: order.total,
+      items: order.items.length,
+      createdBySub: user.sub,
+      msg: `Order ${order.id} created (PENDING)`,
+    });
+    return order;
   }
 
   /**

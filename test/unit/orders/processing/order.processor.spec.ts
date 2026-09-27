@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { Job, Queue } from 'bullmq';
+import { currentCorrelationId } from '../../../../src/common/correlation/correlation-id';
 import { EnvironmentVariables } from '../../../../src/config/env.validation';
 import {
   InsufficientStockError,
@@ -144,6 +145,20 @@ describe('OrderProcessor (orchestration)', () => {
       'estoque insuficiente: Mouse',
     );
     expect(deadLetter.add).not.toHaveBeenCalled();
+  });
+
+  it('handles the job under the correlation id it carries', async () => {
+    givenOrder('Maria');
+    let seen: string | undefined;
+    processing.reserveAndConfirm.mockImplementation(() => {
+      seen = currentCorrelationId();
+      return Promise.resolve(ReservationOutcome.PROCESSED);
+    });
+
+    await processor.process(aJob(0));
+
+    expect(seen).toBe('corr-1');
+    expect(currentCorrelationId()).toBeUndefined();
   });
 
   it('retries an unexpected technical error from the reservation', async () => {

@@ -106,6 +106,14 @@ export class OutboxRelay implements BeforeApplicationShutdown {
         try {
           await this.publish(queue, event);
           published.push(event.id);
+          this.logger.log({
+            event: 'order.enqueued',
+            outboxEventId: event.id,
+            eventType: event.eventType,
+            orderId: event.aggregateId,
+            correlationId: event.correlationId,
+            msg: 'Outbox event published to the queue',
+          });
         } catch (error) {
           await this.recordPublishFailure(manager, event, error);
           interrupted = true;

@@ -4,7 +4,11 @@ import { ConfigService } from '@nestjs/config';
 import { Job, Queue } from 'bullmq';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { EnvironmentVariables } from '../../config/env.validation';
-import { SimulatedProcessingError } from '../domain/errors';
+import { runWithCorrelationId } from '../../common/correlation/correlation-id';
+import {
+  InsufficientStockError,
+  SimulatedProcessingError,
+} from '../domain/errors';
 import { decideFailure, isSimulatedFailure } from '../domain/failure-policy';
 import { OrderStatus } from '../domain/order-status.enum';
 import {
@@ -45,18 +49,44 @@ export class OrderProcessor
   }
 
   async process(job: Job<OrderJobData>): Promise<void> {
+    // Every log line of this job carries the id of the request that created
+    // the order (it travelled API -> outbox -> job payload).
+    return runWithCorrelationId(job.data.correlationId, () =>
+      this.processOrder(job),
+    );
+  }
+
+  private async processOrder(job: Job<OrderJobData>): Promise<void> {
     const { orderId } = job.data;
+    const attempt = job.attemptsMade + 1;
+    const startedAt = Date.now();
 
     const order = await this.processing.findForProcessing(orderId);
     if (!order) {
-      this.logger.warn(`Order ${orderId} not found, nothing to do`);
+      this.logger.warn({
+        event: 'order.processing.skipped',
+        orderId,
+        msg: 'Order not found, nothing to do',
+      });
       return;
     }
     if (order.status !== OrderStatus.PENDING) {
-      this.logger.log(`Order ${orderId} already ${order.status}, skipping`);
+      this.logger.log({
+        event: 'order.processing.skipped',
+        orderId,
+        status: order.status,
+        msg: `Order already ${order.status}, nothing to do`,
+      });
       return;
     }
     await this.processing.recordAttempt(orderId);
+    this.logger.log({
+      event: 'order.processing.started',
+      orderId,
+      attempt,
+      jobId: job.id,
+      msg: 'Processing order',
+    });
 
     try {
       // Stands in for slow external work. Outside any transaction on purpose:
@@ -71,7 +101,14 @@ export class OrderProcessor
         throw new SimulatedProcessingError();
       }
       const outcome = await this.processing.reserveAndConfirm(orderId);
-      this.logger.log(`Order ${orderId}: ${outcome}`);
+      this.logger.log({
+        event: 'order.processing.completed',
+        orderId,
+        attempt,
+        outcome,
+        durationMs: Date.now() - startedAt,
+        msg: `Order ${outcome}`,
+      });
     } catch (error) {
       await this.handleFailure(job, error);
     }
@@ -94,9 +131,15 @@ export class OrderProcessor
     const decision = decideFailure(error, attempt, maxAttempts);
 
     if (decision.action === 'RETRY') {
-      this.logger.warn(
-        `Order ${orderId} attempt ${attempt}/${maxAttempts} failed, will retry: ${describe(error)}`,
-      );
+      this.logger.warn({
+        event: 'order.processing.retry',
+        orderId,
+        attempt,
+        maxAttempts,
+        delayMs: retryDelayMs(job, attempt),
+        error: describe(error),
+        msg: 'Processing failed, will retry',
+      });
       throw error;
     }
 
@@ -114,7 +157,25 @@ export class OrderProcessor
       );
     }
     await this.processing.markFailed(orderId, decision.reason);
-    this.logger.log(`Order ${orderId}: FAILED (${decision.reason})`);
+    if (error instanceof InsufficientStockError) {
+      this.logger.log({
+        event: 'order.stock.insufficient',
+        orderId,
+        attempt,
+        product: error.productName,
+        msg: 'Order FAILED: not enough stock',
+      });
+    } else {
+      this.logger.error({
+        event: 'order.processing.failed',
+        orderId,
+        attempt,
+        maxAttempts,
+        reason: decision.reason,
+        deadLettered: decision.deadLetter,
+        msg: 'Order FAILED after exhausting its attempts',
+      });
+    }
 
     if (decision.deadLetter) {
       throw error; // the original job also ends up in BullMQ's failed set
@@ -124,4 +185,18 @@ export class OrderProcessor
 
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** What BullMQ will wait before the next attempt (for the retry log only). */
+function retryDelayMs(job: Job, attempt: number): number | undefined {
+  const { backoff } = job.opts;
+  if (typeof backoff === 'number') {
+    return backoff;
+  }
+  if (!backoff?.delay) {
+    return undefined;
+  }
+  return backoff.type === 'exponential'
+    ? backoff.delay * 2 ** (attempt - 1)
+    : backoff.delay;
 }
