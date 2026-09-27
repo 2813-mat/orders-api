@@ -1,4 +1,4 @@
-import { UserType } from '../users/user-type.enum';
+import { UserType } from '../users/domain/user-type.enum';
 import { AuthenticatedUser } from './authenticated-user';
 import { Role } from './role.enum';
 

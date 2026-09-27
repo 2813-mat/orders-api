@@ -4,7 +4,7 @@ import request from 'supertest';
 import type { AuthenticatedUser } from '../../../src/auth/authenticated-user';
 import { CurrentUser } from '../../../src/auth/decorators/current-user.decorator';
 import { Public } from '../../../src/auth/decorators/public.decorator';
-import { UserType } from '../../../src/users/user-type.enum';
+import { UserType } from '../../../src/users/domain/user-type.enum';
 import { AuthTestApp, createAuthTestApp } from '../../support/auth-test-app';
 import { FakeIdp } from '../../support/fake-idp';
 

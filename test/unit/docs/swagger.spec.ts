@@ -3,9 +3,9 @@ import { OpenAPIObject } from '@nestjs/swagger';
 import { HealthCheckService, TypeOrmHealthIndicator } from '@nestjs/terminus';
 import { Test } from '@nestjs/testing';
 import { buildOpenApiDocument } from '../../../src/docs/swagger';
-import { HealthController } from '../../../src/health/health.controller';
-import { OrdersController } from '../../../src/orders/orders.controller';
-import { OrdersService } from '../../../src/orders/orders.service';
+import { HealthController } from '../../../src/health/controllers/health.controller';
+import { OrdersController } from '../../../src/orders/controllers/orders.controller';
+import { OrdersService } from '../../../src/orders/services/orders.service';
 
 describe('OpenAPI document', () => {
   let app: INestApplication;

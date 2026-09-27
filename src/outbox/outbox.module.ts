@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { OutboxWriter } from './outbox.writer';
+import { OutboxWriter } from './services/outbox.writer';
 
 @Module({
   providers: [OutboxWriter],

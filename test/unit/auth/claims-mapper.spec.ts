@@ -3,7 +3,7 @@ import {
   mapClaimsToUser,
 } from '../../../src/auth/claims-mapper';
 import { Role } from '../../../src/auth/role.enum';
-import { UserType } from '../../../src/users/user-type.enum';
+import { UserType } from '../../../src/users/domain/user-type.enum';
 
 describe('mapClaimsToUser', () => {
   it('maps a Keycloak user token', () => {

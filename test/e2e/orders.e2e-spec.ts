@@ -16,7 +16,7 @@ import {
 import { OutboxEvent } from '../../src/database/entities/outbox-event.entity';
 import { Product } from '../../src/database/entities/product.entity';
 import { User } from '../../src/database/entities/user.entity';
-import { UserType } from '../../src/users/user-type.enum';
+import { UserType } from '../../src/users/domain/user-type.enum';
 import { truncate } from '../support/database';
 import { E2eStack, startE2eStack } from '../support/e2e-stack';
 

@@ -1,6 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { Logger } from 'nestjs-pino';
-import { OutboxRelay } from './outbox/outbox.relay';
+import { OutboxRelay } from './outbox/services/outbox.relay';
 import { RelayModule } from './relay.module';
 
 async function bootstrap() {

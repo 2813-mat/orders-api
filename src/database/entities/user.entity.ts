@@ -1,5 +1,5 @@
 import { Column, Entity, PrimaryGeneratedColumn, Unique } from 'typeorm';
-import { UserType } from '../../users/user-type.enum';
+import { UserType } from '../../users/domain/user-type.enum';
 
 /**
  * Local profile/cache of a Keycloak identity, upserted just-in-time from token

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { BeforeInsert, Column, Entity, Index, PrimaryColumn } from 'typeorm';
 import { CreatedAtColumn } from '../columns';
-import { OutboxStatus } from '../../outbox/outbox-status.enum';
+import { OutboxStatus } from '../../outbox/domain/outbox-status.enum';
 
 @Entity('outbox_events')
 @Index('idx_outbox_status_created', ['status', 'createdAt'])
