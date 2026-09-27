@@ -157,11 +157,21 @@ describe('OrderProcessor (real BullMQ worker + MySQL)', () => {
     const jobs = await Promise.all(orders.map((id) => enqueue(id)));
     await Promise.all(jobs.map((job) => waitForJob(job.id!)));
 
-    const statuses = await Promise.all(
-      orders.map(async (id) => (await orderById(id)).status),
-    );
-    expect(statuses.filter((s) => s === OrderStatus.PROCESSED)).toHaveLength(5);
-    expect(statuses.filter((s) => s === OrderStatus.FAILED)).toHaveLength(3);
+    const finals = await Promise.all(orders.map(orderById));
+    expect(
+      finals.filter((o) => o.status === OrderStatus.PROCESSED),
+    ).toHaveLength(5);
+    // Failed by the stock check itself, not by the database refusing a
+    // negative stock (which would also end FAILED, after retries).
+    expect(
+      finals
+        .filter((o) => o.status === OrderStatus.FAILED)
+        .map((o) => [o.failureReason, o.processingAttempts]),
+    ).toEqual([
+      ['estoque insuficiente: Mouse', 1],
+      ['estoque insuficiente: Mouse', 1],
+      ['estoque insuficiente: Mouse', 1],
+    ]);
     expect(
       (
         await dataSource

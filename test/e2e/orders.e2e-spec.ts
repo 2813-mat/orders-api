@@ -184,9 +184,15 @@ describe('Orders end to end (API + relay + worker, MySQL + Redis)', () => {
     expect(
       finals.filter((o) => o.status === OrderStatus.PROCESSED),
     ).toHaveLength(3);
-    expect(finals.filter((o) => o.status === OrderStatus.FAILED)).toHaveLength(
-      3,
-    );
+    expect(
+      finals
+        .filter((o) => o.status === OrderStatus.FAILED)
+        .map((o) => o.failureReason),
+    ).toEqual([
+      'estoque insuficiente: Teclado',
+      'estoque insuficiente: Teclado',
+      'estoque insuficiente: Teclado',
+    ]);
     expect(await stockOf('Teclado')).toBe(0);
   });
 
