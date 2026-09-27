@@ -37,7 +37,8 @@ export class FakeIdp {
     readonly jwksUri: string,
   ) {}
 
-  static async start(): Promise<FakeIdp> {
+  /** `port` 0 picks a free one; e2e uses a fixed port known before boot. */
+  static async start(port = 0): Promise<FakeIdp> {
     const trusted = await generateKeyPair('RS256');
     const untrusted = await generateKeyPair('RS256');
     const kid = randomUUID();
@@ -57,16 +58,16 @@ export class FakeIdp {
       res.writeHead(404).end();
     });
     await new Promise<void>((resolve) =>
-      server.listen(0, '127.0.0.1', resolve),
+      server.listen(port, '127.0.0.1', resolve),
     );
-    const { port } = server.address() as AddressInfo;
+    const { port: boundPort } = server.address() as AddressInfo;
 
     return new FakeIdp(
       server,
       kid,
       trusted.privateKey,
       untrusted.privateKey,
-      `http://127.0.0.1:${port}/realms/orders/protocol/openid-connect/certs`,
+      `http://127.0.0.1:${boundPort}/realms/orders/protocol/openid-connect/certs`,
     );
   }
 

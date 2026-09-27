@@ -22,7 +22,8 @@
     "test:watch": "npm run jest -- --watch",
     "test:cov": "npm run jest -- --coverage",
     "test:debug": "node --inspect-brk --experimental-vm-modules --disable-warning=ExperimentalWarning node_modules/jest/bin/jest.js --runInBand",
-    "test:e2e": "npm run jest -- --config ./test/jest-e2e.json",
+    "test:e2e": "npm run jest -- --selectProjects e2e --runInBand",
+    "test:all": "npm test && npm run test:int && npm run test:e2e",
     "typeorm": "typeorm-ts-node-commonjs -d src/database/data-source.ts",
     "migration:generate": "npm run typeorm -- migration:generate",
     "migration:create": "typeorm-ts-node-commonjs migration:create",
@@ -126,6 +127,29 @@
           "^.+\\.(t|j)s$": "ts-jest"
         },
         "testEnvironment": "node"
+      },
+      {
+        "displayName": "e2e",
+        "rootDir": ".",
+        "roots": [
+          "<rootDir>/test/e2e"
+        ],
+        "testRegex": ".*\\.e2e-spec\\.ts$",
+        "globalSetup": "<rootDir>/test/support/global-setup.ts",
+        "globalTeardown": "<rootDir>/test/support/global-teardown.ts",
+        "testTimeout": 60000,
+        "moduleFileExtensions": [
+          "js",
+          "json",
+          "ts"
+        ],
+        "transform": {
+          "^.+\\.(t|j)s$": "ts-jest"
+        },
+        "testEnvironment": "node",
+        "setupFiles": [
+          "<rootDir>/test/support/e2e-env.ts"
+        ]
       }
     ],
     "collectCoverageFrom": [
