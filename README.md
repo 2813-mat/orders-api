@@ -4,7 +4,7 @@
 
 Backend de pedidos com processamento assíncrono: **NestJS + MySQL + BullMQ (Redis) + Keycloak**.
 
-O pedido é aceito na hora como `PENDING` e processado depois por um worker, que reserva o estoque e termina em `PROCESSED` ou `FAILED`. A reserva é **segura sob concorrência** (o estoque nunca fica negativo) e **idempotente sob retry** (um pedido nunca baixa o estoque duas vezes). Os testes com MySQL e Redis reais provam as duas coisas.
+O pedido é aceito na hora como `PENDING` e processado depois por um worker, que reserva o estoque e termina em `PROCESSED` ou `FAILED`. A reserva é **segura sob concorrência** (o estoque nunca fica negativo) e **idempotente sob retry** (um pedido nunca baixa o estoque duas vezes). Os testes com MySQL e Redis reais provam as duas coisas: veja [Testes de concorrência](#testes-de-concorrência).
 
 As respostas às perguntas de arquitetura estão em [RESPOSTAS.md](RESPOSTAS.md).
 
@@ -19,6 +19,7 @@ As respostas às perguntas de arquitetura estão em [RESPOSTAS.md](RESPOSTAS.md)
 5. [Modelagem de dados](#modelagem-de-dados)
 6. [Decisões de arquitetura](#decisões-de-arquitetura)
 7. [Concorrência e idempotência no estoque](#concorrência-e-idempotência-no-estoque)
+   - [Testes de concorrência](#testes-de-concorrência)
 8. [Retry, falha e dead-letter](#retry-falha-e-dead-letter)
 9. [Transactional Outbox](#transactional-outbox)
 10. [Autenticação e SSO (Keycloak)](#autenticação-e-sso-keycloak)
@@ -202,7 +203,7 @@ npm run test:all    # os três
 
 **E2E:** os três processos juntos. O cliente só usa HTTP e acompanha o pedido até `PROCESSED`/`FAILED`, inclusive 6 pedidos simultâneos contra estoque 3.
 
-> Para garantir que os testes de concorrência detectam o problema de verdade, removi temporariamente a condição `stock >= ?` do UPDATE: **4 testes falharam**. Sem o `FOR UPDATE` no pedido, **1 falhou**. Sem o `status = 'FAILED'` no reprocess, **3 falharam**.
+> Os 8 cenários concorrentes, o código do principal, a prova de que eles detectam o problema e o comando para rodar só eles estão em [Testes de concorrência](#testes-de-concorrência).
 
 No lugar do Keycloak, os testes usam um **IdP falso** (`test/support/fake-idp.ts`): um par RSA e um servidor JWKS local emitindo tokens no formato do Keycloak. O `JwtStrategy` e os guards rodam de verdade; nada do lado da API é mockado.
 
@@ -283,6 +284,67 @@ Depois de um rollback por falta de estoque, o pedido é marcado `FAILED` com `"e
 | Pedido com item OK + item sem estoque | Rollback da transação inteira (sem compensação manual) |
 | Deadlock entre pedidos com vários itens | Linhas travadas sempre na ordem de `product_id` |
 | Reprocessamento manual | Só pedido `FAILED`, que por construção nunca tem reserva |
+
+### Testes de concorrência
+
+Os cenários concorrentes do enunciado **rodam de verdade** nos testes, contra MySQL 8.4 e Redis 7 reais (Testcontainers), e não com mocks.
+
+**Como o paralelismo é garantido:**
+- **Serviço:** as chamadas são disparadas juntas com `Promise.all`. Cada uma abre sua própria transação numa **conexão diferente** do pool (10 conexões), e o MySQL intercala as transações de fato. Com uma conexão só, tudo rodaria em fila e o teste não provaria nada.
+- **Fila:** os jobs são consumidos por um worker BullMQ real com `concurrency = 5`.
+- **E2E:** POSTs HTTP simultâneos atravessam a API, o relay e o worker reais. O cliente acompanha cada pedido por `GET /orders/:id` até o status final.
+
+| # | Cenário | Nível | O que o teste verifica |
+|---|---|---|---|
+| 1 | **2 pedidos de 3 unidades, estoque 5** (o caso do enunciado) | serviço | exatamente **1 `PROCESSED` + 1 `FAILED`**; estoque final **2** |
+| 2 | 10 pedidos de 1 unidade, estoque 5 | serviço | **5 `PROCESSED` + 5 `FAILED`**; estoque **0**; exatamente 5 reservas |
+| 3 | **O mesmo pedido processado por 5 workers ao mesmo tempo** (retry/reentrega) | serviço | 1 `PROCESSED` + 4 "já processado"; **uma baixa** e **uma reserva** |
+| 4 | Pedidos com os mesmos produtos em ordem invertida (10 rodadas × 4 pedidos) | serviço | **nenhum deadlock**; estoque final exato |
+| 5 | 8 jobs na fila real, estoque 5 | fila | 5 `PROCESSED` + 3 `FAILED`; estoque 0 |
+| 6 | **6 POSTs HTTP simultâneos, estoque 3** | e2e | 3 `PROCESSED` + 3 `FAILED` "estoque insuficiente"; estoque 0 |
+| 7 | 2 instâncias do relay sobre 100 eventos | outbox | **exatamente 100 publicações** (`SKIP LOCKED`) |
+| 8 | 2 ADMINs reprocessando o mesmo pedido juntos | HTTP | um **202** e um **409**; um único evento novo |
+
+Os arquivos:
+- 1 a 4: `test/integration/orders/services/order-processing.int-spec.ts`
+- 5: `test/integration/orders/processors/order.processor.int-spec.ts`
+- 6: `test/e2e/orders.e2e-spec.ts`
+- 7: `test/integration/outbox/services/outbox.relay.int-spec.ts`
+- 8: `test/integration/orders/controllers/reprocess-order.int-spec.ts`
+
+O cenário 1, como está no teste:
+
+```ts
+it('two orders of 3 against a stock of 5: exactly one wins', async () => {
+  const mouse = await createProduct('Mouse', 5);
+  const a = await createOrder([mouse, 3]);
+  const b = await createOrder([mouse, 3]);
+
+  await Promise.all([process(a), process(b)]); // as duas reservas ao mesmo tempo
+
+  expect(await statusCounts([a, b])).toEqual({ processed: 1, failed: 1 });
+  expect(await stockOf(mouse)).toBe(2); // nunca -1
+});
+```
+
+**Os testes detectam o problema de verdade.** Para confirmar, removi cada proteção do código de propósito e rodei os testes de novo:
+
+| Proteção removida | Resultado |
+|---|---|
+| `AND stock >= ?` no UPDATE do estoque | **8 testes falham**, entre eles os cenários 1, 2, 5 e 6 |
+| `FOR UPDATE` no pedido | **1 teste falha**: o cenário 3, que baixa o estoque mais de uma vez |
+| `status = 'FAILED'` no UPDATE do reprocessamento | **3 testes falham**, entre eles o cenário 8, que enfileira duas vezes |
+
+Sem a condição `stock >= ?`, o estoque **mesmo assim não fica negativo**: o MySQL recusa o UPDATE (`INT UNSIGNED` + `CHECK`). Só que o pedido então falha como erro técnico, depois de 3 tentativas, e não como "estoque insuficiente". Por isso os cenários 5 e 6 conferem também o **motivo** da falha: sem isso, a segunda proteção esconderia a queda da primeira.
+
+**Para rodar só esses testes** (precisa do Docker):
+
+```bash
+npm run test:int -- -t "concurrency|idempotency|arrive together|SKIP LOCKED|at the same time"   # 17 testes
+npm run test:e2e -- -t "at the same time"                                                        # cenário 6
+```
+
+Para ver o mesmo cenário na stack rodando, use o passo 5 do [roteiro com `curl`](#roteiro-com-curl): 5 pedidos simultâneos de 2 Teclados com estoque 5 terminam em 2 `PROCESSED`, 3 `FAILED` e estoque 1.
 
 ---
 
