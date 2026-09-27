@@ -172,6 +172,7 @@ npm test            # unitários (sem dependências)
 npm run test:int    # integração: MySQL 8.4 + Redis 7 reais via Testcontainers (precisa do Docker)
 npm run test:e2e    # e2e: API + relay + worker reais, via HTTP (precisa do Docker)
 npm run test:all    # os três
+npm run test:cov    # os três com relatório de cobertura (em série: as suítes compartilham o mesmo MySQL)
 ```
 
 **96 unitários, 125 de integração e 9 e2e.** A CI (GitHub Actions) roda lint, `tsc`, build e as três suítes a cada push. As suítes com banco usam **as mesmas migrations de produção** e não dependem do `.env`.

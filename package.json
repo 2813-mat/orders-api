@@ -22,7 +22,7 @@
     "test": "npm run jest -- --selectProjects unit",
     "test:int": "npm run jest -- --selectProjects integration --runInBand",
     "test:watch": "npm run jest -- --watch",
-    "test:cov": "npm run jest -- --coverage",
+    "test:cov": "npm run jest -- --coverage --runInBand",
     "test:debug": "node --inspect-brk --experimental-vm-modules --disable-warning=ExperimentalWarning node_modules/jest/bin/jest.js --runInBand",
     "test:e2e": "npm run jest -- --selectProjects e2e --runInBand",
     "test:all": "npm test && npm run test:int && npm run test:e2e",
