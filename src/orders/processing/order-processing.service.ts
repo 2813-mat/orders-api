@@ -20,13 +20,28 @@ export enum ReservationOutcome {
 export class OrderProcessingService {
   constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
 
-  /** Cheap check before the simulated work; the real one happens under lock. */
-  async currentStatus(orderId: string): Promise<OrderStatus | null> {
-    const order = await this.dataSource.getRepository(Order).findOne({
-      select: { id: true, status: true },
+  /**
+   * What the worker needs before the simulated work. The status read here is
+   * only a shortcut; the authoritative check happens under lock.
+   */
+  async findForProcessing(
+    orderId: string,
+  ): Promise<Pick<Order, 'id' | 'status' | 'customerName'> | null> {
+    return this.dataSource.getRepository(Order).findOne({
+      select: { id: true, status: true, customerName: true },
       where: { id: orderId },
     });
-    return order?.status ?? null;
+  }
+
+  /** Counts one more processing attempt on a still PENDING order. */
+  async recordAttempt(orderId: string): Promise<void> {
+    await this.dataSource
+      .getRepository(Order)
+      .increment(
+        { id: orderId, status: OrderStatus.PENDING },
+        'processingAttempts',
+        1,
+      );
   }
 
   /**

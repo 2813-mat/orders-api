@@ -13,7 +13,10 @@ import { Order } from '../../../../src/orders/entities/order.entity';
 import { OrderProcessingModule } from '../../../../src/orders/processing/order-processing.module';
 import {
   ORDER_CREATED_JOB,
+  ORDER_FAILED_JOB,
   OrderJobData,
+  OrderDeadLetterData,
+  ORDERS_DEAD_LETTER_QUEUE,
   ORDERS_QUEUE,
 } from '../../../../src/orders/queue/queue.constants';
 import { Product } from '../../../../src/products/product.entity';
@@ -24,6 +27,7 @@ describe('OrderProcessor (real BullMQ worker + MySQL)', () => {
   let moduleRef: TestingModule;
   let dataSource: DataSource;
   let queue: Queue<OrderJobData>;
+  let deadLetter: Queue<OrderDeadLetterData>;
 
   beforeAll(async () => {
     moduleRef = await Test.createTestingModule({
@@ -49,10 +53,12 @@ describe('OrderProcessor (real BullMQ worker + MySQL)', () => {
     await moduleRef.init();
     dataSource = moduleRef.get<DataSource>(getDataSourceToken());
     queue = moduleRef.get(getQueueToken(ORDERS_QUEUE));
+    deadLetter = moduleRef.get(getQueueToken(ORDERS_DEAD_LETTER_QUEUE));
   });
   afterAll(() => moduleRef.close());
   beforeEach(async () => {
     await queue.obliterate({ force: true });
+    await deadLetter.obliterate({ force: true });
     await truncate(
       dataSource,
       'stock_reservations',
@@ -65,10 +71,14 @@ describe('OrderProcessor (real BullMQ worker + MySQL)', () => {
   const createProduct = (name: string, stock: number) =>
     dataSource.getRepository(Product).save({ name, stock });
 
-  const createOrder = async (product: Product, quantity: number) => {
+  const createOrder = async (
+    product: Product,
+    quantity: number,
+    customerName = 'Cliente',
+  ) => {
     const order = await dataSource.getRepository(Order).save(
       dataSource.getRepository(Order).create({
-        customerName: 'Cliente',
+        customerName,
         total: quantity,
         status: OrderStatus.PENDING,
         createdBySub: randomUUID(),
@@ -178,6 +188,59 @@ describe('OrderProcessor (real BullMQ worker + MySQL)', () => {
           .findOneByOrFail({ id: mouse.id })
       ).stock,
     ).toBe(3);
+  });
+
+  it('retries a failing order with backoff, then marks it FAILED and dead-letters it', async () => {
+    const mouse = await createProduct('Mouse', 5);
+    const orderId = await createOrder(mouse, 1, 'Cliente fail');
+
+    const job = await enqueue(orderId);
+
+    await expect(waitForJob(job.id!)).resolves.toBe('failed');
+    expect((await queue.getJob(job.id!))?.attemptsMade).toBe(3);
+    expect(await orderById(orderId)).toMatchObject({
+      status: OrderStatus.FAILED,
+      failureReason: 'falha simulada no processamento',
+      processingAttempts: 3,
+    });
+    // Nothing was reserved on any of the attempts.
+    expect(
+      (
+        await dataSource
+          .getRepository(Product)
+          .findOneByOrFail({ id: mouse.id })
+      ).stock,
+    ).toBe(5);
+
+    const [dead] = await deadLetter.getJobs(['waiting']);
+    expect(dead.name).toBe(ORDER_FAILED_JOB);
+    expect(dead.id).toBe(`${orderId}-${job.id}`);
+    expect(dead.data).toMatchObject({
+      orderId,
+      correlationId: job.data.correlationId,
+      reason: 'falha simulada no processamento',
+      attempts: 3,
+    });
+  });
+
+  it('counts a single attempt for an order that goes through', async () => {
+    const mouse = await createProduct('Mouse', 5);
+    const orderId = await createOrder(mouse, 1);
+
+    await waitForJob((await enqueue(orderId)).id!);
+
+    expect((await orderById(orderId)).processingAttempts).toBe(1);
+    expect(await deadLetter.count()).toBe(0);
+  });
+
+  it('does not dead-letter a business failure', async () => {
+    const mouse = await createProduct('Mouse', 0);
+    const orderId = await createOrder(mouse, 1);
+
+    await waitForJob((await enqueue(orderId)).id!);
+
+    expect((await orderById(orderId)).processingAttempts).toBe(1);
+    expect(await deadLetter.count()).toBe(0);
   });
 
   it('completes a job whose order does not exist', async () => {

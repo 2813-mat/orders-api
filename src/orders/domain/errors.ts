@@ -23,3 +23,15 @@ export class InsufficientStockError extends Error {
     super(`estoque insuficiente: ${productName}`);
   }
 }
+
+/**
+ * Technical failure injected by the exercise ("fail" in the customer name):
+ * retried with backoff, then dead-lettered.
+ */
+export class SimulatedProcessingError extends Error {
+  override readonly name = 'SimulatedProcessingError';
+
+  constructor() {
+    super('falha simulada no processamento');
+  }
+}
