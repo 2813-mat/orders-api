@@ -33,15 +33,15 @@ As respostas às perguntas de arquitetura estão em [RESPOSTAS.md](RESPOSTAS.md)
 
 ```mermaid
 flowchart LR
-  C[Cliente] -- "1. login / client credentials" --> K[Keycloak]
-  C -- "2. POST /orders (Bearer JWT)" --> A[API]
-  A -- "valida JWT (JWKS em cache)" -.-> K
-  A -- "3. 1 transação: pedido + itens + evento" --> DB[(MySQL)]
-  R[Relay] -- "4. SELECT ... FOR UPDATE SKIP LOCKED" --> DB
-  R -- "5. add(jobId = id do evento)" --> Q[[BullMQ: orders]]
+  C[Cliente] -->|"1. login / client credentials"| K[Keycloak]
+  C -->|"2. POST /orders (Bearer JWT)"| A[API]
+  A -.->|"valida JWT (JWKS em cache)"| K
+  A -->|"3. 1 transação: pedido + itens + evento"| DB[(MySQL)]
+  R[Relay] -->|"4. SELECT ... FOR UPDATE SKIP LOCKED"| DB
+  R -->|"5. add(jobId = id do evento)"| Q[[BullMQ: orders]]
   Q --> W[Worker]
-  W -- "6. reserva estoque + PROCESSED/FAILED (1 transação)" --> DB
-  W -- "falha técnica esgotada" --> D[[BullMQ: orders-dlq]]
+  W -->|"6. reserva estoque + PROCESSED/FAILED (1 transação)"| DB
+  W -->|"falha técnica esgotada"| D[[BullMQ: orders-dlq]]
 ```
 
 São **três processos** da mesma imagem Docker, cada um com seu entrypoint:
