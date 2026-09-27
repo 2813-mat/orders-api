@@ -1,31 +1,26 @@
 import { InjectQueue } from '@nestjs/bullmq';
 import { BeforeApplicationShutdown, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { InjectDataSource } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
-import { DataSource, EntityManager, In } from 'typeorm';
 import { EnvironmentVariables } from '../../config/env.validation';
+import { OutboxEvent } from '../../database/entities/outbox-event.entity';
+import {
+  Transaction,
+  TransactionRunner,
+} from '../../database/transaction-runner';
 import { ORDER_CREATED_EVENT } from '../../orders/domain/events/order-created.event';
 import { ORDERS_QUEUE } from '../../orders/queue/queue.constants';
-import { OutboxEvent } from '../../database/entities/outbox-event.entity';
-import { OutboxStatus } from '../domain/outbox-status.enum';
 import { nextRelayDelay, RelayTickOutcome } from '../domain/relay-delay';
+import {
+  OutboxBacklog,
+  OutboxEventsRepository,
+} from '../repositories/outbox-events.repository';
 
 export interface RelayBatchResult extends RelayTickOutcome {
   published: number;
 }
 
-export interface OutboxBacklog {
-  /** Events waiting to be published. */
-  pending: number;
-  /** Events the relay gave up on: need an operator. */
-  failed: number;
-  /** Age of the oldest PENDING event, by the database clock; null if none. */
-  oldestPendingAgeMs: number | null;
-}
-
 const MAX_BACKOFF_MS = 30_000;
-const LAST_ERROR_MAX_LENGTH = 500;
 const BACKLOG_REPORT_INTERVAL_MS = 30_000;
 /** An event older than this means orders are stuck before the queue. */
 const BACKLOG_WARN_AGE_MS = 60_000;
@@ -52,7 +47,8 @@ export class OutboxRelay implements BeforeApplicationShutdown {
   private stopping = false;
 
   constructor(
-    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly transactions: TransactionRunner,
+    private readonly events: OutboxEventsRepository,
     @InjectQueue(ORDERS_QUEUE) ordersQueue: Queue,
     config: ConfigService<EnvironmentVariables, true>,
   ) {
@@ -95,35 +91,8 @@ export class OutboxRelay implements BeforeApplicationShutdown {
    * thing to look at when an order stays PENDING: it means the event never
    * reached the queue (Redis down, relay stopped or failing).
    */
-  async backlog(): Promise<OutboxBacklog> {
-    const [row] = await this.dataSource.query<
-      Array<{
-        pending: string | null;
-        failed: string | null;
-        oldestPendingAgeMs: string | null;
-      }>
-    >(
-      `SELECT SUM(status = ?) AS pending,
-              SUM(status = ?) AS failed,
-              TIMESTAMPDIFF(MICROSECOND,
-                            MIN(CASE WHEN status = ? THEN created_at END),
-                            NOW(3)) DIV 1000 AS oldestPendingAgeMs
-         FROM outbox_events
-        WHERE status IN (?, ?)`,
-      [
-        OutboxStatus.PENDING,
-        OutboxStatus.FAILED,
-        OutboxStatus.PENDING,
-        OutboxStatus.PENDING,
-        OutboxStatus.FAILED,
-      ],
-    );
-    return {
-      pending: Number(row.pending ?? 0),
-      failed: Number(row.failed ?? 0),
-      oldestPendingAgeMs:
-        row.oldestPendingAgeMs === null ? null : Number(row.oldestPendingAgeMs),
-    };
+  backlog(): Promise<OutboxBacklog> {
+    return this.events.backlog();
   }
 
   private async reportBacklog(): Promise<void> {
@@ -154,17 +123,8 @@ export class OutboxRelay implements BeforeApplicationShutdown {
    * trying them all would only burn their attempts.
    */
   async publishBatch(): Promise<RelayBatchResult> {
-    return this.dataSource.transaction(async (manager) => {
-      const events = await manager
-        .getRepository(OutboxEvent)
-        .createQueryBuilder('event')
-        .where('event.status = :status', { status: OutboxStatus.PENDING })
-        .orderBy('event.createdAt', 'ASC')
-        .addOrderBy('event.id', 'ASC')
-        .limit(this.batchSize)
-        .setLock('pessimistic_write')
-        .setOnLocked('skip_locked')
-        .getMany();
+    return this.transactions.run(async (tx) => {
+      const events = await this.events.lockPendingBatch(tx, this.batchSize);
 
       const published: string[] = [];
       let interrupted = false;
@@ -172,7 +132,7 @@ export class OutboxRelay implements BeforeApplicationShutdown {
         const queue = this.routes.get(event.eventType);
         if (!queue) {
           await this.markFailed(
-            manager,
+            tx,
             event,
             `no queue for event type ${event.eventType}`,
           );
@@ -190,21 +150,14 @@ export class OutboxRelay implements BeforeApplicationShutdown {
             msg: 'Outbox event published to the queue',
           });
         } catch (error) {
-          await this.recordPublishFailure(manager, event, error);
+          await this.recordPublishFailure(tx, event, error);
           interrupted = true;
           break;
         }
       }
 
       if (published.length > 0) {
-        await manager.update(
-          OutboxEvent,
-          { id: In(published) },
-          {
-            status: OutboxStatus.PUBLISHED,
-            publishedAt: () => 'CURRENT_TIMESTAMP(3)',
-          },
-        );
+        await this.events.markPublished(tx, published);
       }
       return {
         published: published.length,
@@ -269,19 +222,20 @@ export class OutboxRelay implements BeforeApplicationShutdown {
   }
 
   private async recordPublishFailure(
-    manager: EntityManager,
+    tx: Transaction,
     event: OutboxEvent,
     error: unknown,
   ): Promise<void> {
     const attempts = event.attempts + 1;
     if (attempts >= this.maxAttempts) {
-      await this.markFailed(manager, event, describe(error));
+      await this.markFailed(tx, event, describe(error));
       return;
     }
-    await manager.update(
-      OutboxEvent,
-      { id: event.id },
-      { attempts, lastError: truncate(describe(error)) },
+    await this.events.recordFailedAttempt(
+      tx,
+      event.id,
+      attempts,
+      describe(error),
     );
     this.logger.warn(
       `Publishing outbox event ${event.id} failed (attempt ${attempts}/${this.maxAttempts}): ${describe(error)}`,
@@ -289,19 +243,11 @@ export class OutboxRelay implements BeforeApplicationShutdown {
   }
 
   private async markFailed(
-    manager: EntityManager,
+    tx: Transaction,
     event: OutboxEvent,
     reason: string,
   ): Promise<void> {
-    await manager.update(
-      OutboxEvent,
-      { id: event.id },
-      {
-        status: OutboxStatus.FAILED,
-        attempts: event.attempts + 1,
-        lastError: truncate(reason),
-      },
-    );
+    await this.events.markFailed(tx, event.id, event.attempts + 1, reason);
     this.logger.error(
       `Outbox event ${event.id} (${event.eventType}, aggregate ${event.aggregateId}) gave up: ${reason}`,
     );
@@ -310,8 +256,4 @@ export class OutboxRelay implements BeforeApplicationShutdown {
 
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function truncate(message: string): string {
-  return message.slice(0, LAST_ERROR_MAX_LENGTH);
 }

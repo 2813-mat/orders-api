@@ -311,7 +311,7 @@ Configuração (`.env`): `QUEUE_ATTEMPTS=3`, `QUEUE_BACKOFF_MS=1000`, `WORKER_CO
 
 **Por que existe:** sem ele, o `POST` faria "grava no MySQL" e depois "publica no Redis", duas operações sem atomicidade. Se o Redis cai entre as duas, o pedido fica `PENDING` para sempre, sem evento. Com o outbox, o pedido, os itens e o evento são gravados **na mesma transação**. Se o evento existe, o pedido existe, e vice-versa. **Com o Redis fora, o `POST` continua respondendo 201.**
 
-**Relay** (`src/outbox/outbox.relay.ts`), a cada `OUTBOX_POLL_INTERVAL_MS`:
+**Relay** (`src/outbox/services/outbox.relay.ts`), a cada `OUTBOX_POLL_INTERVAL_MS`:
 - **Lote:** `SELECT … WHERE status='PENDING' ORDER BY created_at LIMIT n FOR UPDATE SKIP LOCKED`. Várias instâncias podem rodar lado a lado sem pegar o mesmo evento.
 - **Publicação e confirmação:** `queue.add(event_type, payload, { jobId: event.id })`, depois `PUBLISHED`. Tudo numa transação curta.
 - **Timeout na publicação:** `OUTBOX_PUBLISH_TIMEOUT_MS`. Com o Redis fora, o BullMQ **espera para sempre** em vez de falhar, e isso seguraria a transação e os locks.
@@ -418,27 +418,43 @@ docker compose exec redis redis-cli LLEN bull:orders:wait                   # fi
 
 ## Estrutura do código
 
+Cada módulo é separado por camada:
+- **controllers:** HTTP;
+- **services:** regra de negócio e o que precisa ser atômico;
+- **repositories:** todo o acesso ao banco.
+
+Nenhum service escreve SQL ou importa o TypeORM. Quando algo precisa ser atômico, o service abre a transação com o `TransactionRunner` e passa o `tx` para os repositories: é o service que decide *o que* é atômico, e o repository decide *como* consultar.
+
 ```
 src/
-├── main.ts · relay.ts · worker.ts        # os três entrypoints
+├── main.ts · relay.ts · worker.ts           # os três entrypoints
 ├── app.module.ts · relay.module.ts · worker.module.ts
-├── auth/          # JwtStrategy (JWKS), guards globais, @Roles, @Public, @CurrentUser
-├── users/         # perfil local just-in-time a partir do token
 ├── orders/
-│   ├── domain/    # funções puras: total, política de falha, linhas de reserva, erros, evento
-│   ├── dto/       # entrada (class-validator) e saída (documentada no Swagger)
-│   ├── entities/  # Order, OrderItem, StockReservation
-│   ├── processing/# worker: processor BullMQ + reserva transacional
-│   ├── queue/     # filas orders e orders-dlq
-│   └── orders.controller.ts · orders.service.ts
-├── outbox/        # writer transacional + relay
-├── products/ · health/ · docs/ (Swagger)
-├── common/        # correlation id, logging, paginação, validação, erros
-├── config/        # validação do env (Zod)
-└── database/      # data source, migrations, seed
+│   ├── controllers/     # POST/GET /orders, reprocess
+│   ├── services/        # OrdersService (criar, consultar, reprocessar), OrderProcessingService (reserva)
+│   ├── repositories/    # OrdersRepository (pedido + itens), StockReservationsRepository
+│   ├── processors/      # consumidor BullMQ (worker)
+│   ├── domain/          # funções puras: total, política de falha, linhas de reserva, erros, evento
+│   ├── dto/             # entrada (class-validator) e saída (documentada no Swagger)
+│   ├── filters/ · queue/
+│   └── orders.module.ts (API) · order-processing.module.ts (worker)
+├── outbox/
+│   ├── services/        # OutboxWriter (transacional), OutboxRelay (polling → fila)
+│   ├── repositories/    # OutboxEventsRepository (lote SKIP LOCKED, backlog)
+│   └── domain/
+├── products/repositories/   # ProductsRepository (catálogo, baixa condicional de estoque)
+├── users/               # services/ · repositories/ · interceptors/ (perfil local just-in-time)
+├── health/controllers/ · docs/ (Swagger)
+├── auth/                # JwtStrategy (JWKS), guards globais, @Roles, @Public, @CurrentUser
+├── common/              # correlation id, logging, paginação, validação, erros
+├── config/              # validação do env (Zod)
+└── database/
+    ├── entities/        # as 6 entities do TypeORM
+    ├── transaction-runner.ts
+    └── migrations/ · seeds/
 test/
-├── unit/ · integration/ · e2e/
-└── support/       # fake IdP, Testcontainers, stack e2e
+├── unit/ · integration/ · e2e/   # espelham a estrutura de src/
+└── support/                      # fake IdP, Testcontainers, stack e2e
 ```
 
 ---

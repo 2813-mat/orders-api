@@ -20,7 +20,7 @@ Neste projeto, em camadas, cada uma cobrindo uma falha diferente:
 3. **Restrição no banco como última defesa:** `UNIQUE (order_id, product_id)` em `stock_reservations`. Mesmo que um bug pule a checagem de status, a segunda reserva viola a constraint e a transação inteira faz rollback, inclusive a baixa de estoque.
 4. **Estados finais não são sobrescritos:** marcar `FAILED` usa `WHERE status = 'PENDING'`, então um retry atrasado não desfaz um `PROCESSED`.
 
-**Teste:** `test/integration/orders/processing/order-processing.int-spec.ts` processa o mesmo pedido 5 vezes **em paralelo** e confirma uma baixa e uma linha de reserva. Removendo o `FOR UPDATE`, o teste falha.
+**Teste:** `test/integration/orders/services/order-processing.int-spec.ts` processa o mesmo pedido 5 vezes **em paralelo** e confirma uma baixa e uma linha de reserva. Removendo o `FOR UPDATE`, o teste falha.
 
 **Para um consumidor genérico**, sem um agregado com status para travar, o padrão é uma tabela `processed_events (event_id PRIMARY KEY)` inserida **na mesma transação** do efeito. Se o insert der chave duplicada, o evento já foi processado: a transação faz rollback e o job é confirmado sem efeito. O mesmo raciocínio vale para chamadas externas, passando uma *idempotency key* derivada do id do evento.
 

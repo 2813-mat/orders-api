@@ -1,25 +1,20 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
-import { DataSource, FindOptionsWhere, In, Repository } from 'typeorm';
 import { AuthenticatedUser } from '../../auth/authenticated-user';
 import { Role } from '../../auth/role.enum';
-import {
-  buildPageMeta,
-  Page,
-  PageRequest,
-  pageOffset,
-} from '../../common/pagination/page';
 import { currentCorrelationId } from '../../common/correlation/correlation-id';
-import { OutboxWriter } from '../../outbox/services/outbox.writer';
+import { buildPageMeta, Page, PageRequest } from '../../common/pagination/page';
+import { Order } from '../../database/entities/order.entity';
 import { Product } from '../../database/entities/product.entity';
+import { TransactionRunner } from '../../database/transaction-runner';
+import { OutboxWriter } from '../../outbox/services/outbox.writer';
+import { ProductsRepository } from '../../products/repositories/products.repository';
 import { UnknownProductsError } from '../domain/errors';
 import { OrderCreatedEvent } from '../domain/events/order-created.event';
-import { calculateOrderTotals } from '../domain/order-total';
 import { OrderStatus } from '../domain/order-status.enum';
+import { calculateOrderTotals } from '../domain/order-total';
 import { CreateOrderDto } from '../dto/create-order.dto';
-import { OrderItem } from '../../database/entities/order-item.entity';
-import { Order } from '../../database/entities/order.entity';
+import { OrdersRepository } from '../repositories/orders.repository';
 
 export type ReprocessResult =
   | { outcome: 'REQUEUED'; order: Order }
@@ -31,13 +26,9 @@ export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
 
   constructor(
-    @InjectDataSource() private readonly dataSource: DataSource,
-    @InjectRepository(Order)
-    private readonly orders: Repository<Order>,
-    @InjectRepository(OrderItem)
-    private readonly items: Repository<OrderItem>,
-    @InjectRepository(Product)
-    private readonly products: Repository<Product>,
+    private readonly transactions: TransactionRunner,
+    private readonly orders: OrdersRepository,
+    private readonly products: ProductsRepository,
     private readonly outboxWriter: OutboxWriter,
   ) {}
 
@@ -61,33 +52,30 @@ export class OrdersService {
     // scripts) there is none: start a new one.
     const correlationId = currentCorrelationId() ?? randomUUID();
 
-    const order = await this.dataSource.transaction(async (manager) => {
-      const order = await manager.save(
-        manager.create(Order, {
-          customerName: input.customerName,
-          total,
-          status: OrderStatus.PENDING,
-          createdBySub: user.sub,
-          correlationId,
-        }),
-      );
+    const order = await this.transactions.run(async (tx) => {
       // Items are stored as sent (a repeated product stays two lines); they
       // are only aggregated per product when stock is reserved.
-      order.items = await manager.save(
+      const order = await this.orders.insertWithItems(
+        tx,
+        {
+          customerName: input.customerName,
+          total,
+          createdBySub: user.sub,
+          correlationId,
+        },
         input.items.map((item, index) => {
           const product = catalog.get(item.productName.toLowerCase())!;
-          return manager.create(OrderItem, {
-            orderId: order.id,
+          return {
             productId: product.id,
             productName: product.name,
             quantity: item.quantity,
             unitPrice: item.price,
             subtotal: subtotals[index],
-          });
+          };
         }),
       );
       await this.outboxWriter.write(
-        manager,
+        tx,
         new OrderCreatedEvent(order.id, correlationId),
       );
       return order;
@@ -108,39 +96,18 @@ export class OrdersService {
    * `null` both when the order doesn't exist and when it belongs to someone
    * else: a USER can't tell another user's order id from a made-up one.
    */
-  async findOne(id: string, user: AuthenticatedUser): Promise<Order | null> {
-    return this.orders.findOne({
-      where: { id, ...this.visibleTo(user) },
-      relations: { items: true },
-      order: { items: { id: 'ASC' } },
-    });
+  findOne(id: string, user: AuthenticatedUser): Promise<Order | null> {
+    return this.orders.findWithItems(id, this.ownerFilter(user));
   }
 
-  /**
-   * Newest first. Two queries (page of orders, then their items) instead of
-   * a join: LIMIT on a joined result would count item rows, not orders.
-   */
   async list(
     request: PageRequest,
     user: AuthenticatedUser,
   ): Promise<Page<Order>> {
-    const [orders, total] = await this.orders.findAndCount({
-      where: this.visibleTo(user),
-      order: { createdAt: 'DESC', id: 'DESC' },
-      skip: pageOffset(request),
-      take: request.limit,
-    });
-
-    const items = orders.length
-      ? await this.items.find({
-          where: { orderId: In(orders.map((order) => order.id)) },
-          order: { id: 'ASC' },
-        })
-      : [];
-    for (const order of orders) {
-      order.items = items.filter((item) => item.orderId === order.id);
-    }
-
+    const [orders, total] = await this.orders.findPage(
+      request,
+      this.ownerFilter(user),
+    );
     return { data: orders, meta: buildPageMeta(request, total) };
   }
 
@@ -153,31 +120,19 @@ export class OrdersService {
    * a FAILED order never holds a reservation (its transaction rolled back).
    */
   async reprocess(id: string): Promise<ReprocessResult> {
-    return this.dataSource.transaction(async (manager) => {
-      const { affected } = await manager.update(
-        Order,
-        { id, status: OrderStatus.FAILED },
-        { status: OrderStatus.PENDING, failureReason: null },
-      );
-      if (!affected) {
-        const current = await manager.findOne(Order, {
-          select: { id: true, status: true },
-          where: { id },
-        });
+    return this.transactions.run(async (tx) => {
+      if (!(await this.orders.requeueIfFailed(tx, id))) {
+        const current = await this.orders.findStatus(id, tx);
         return current
           ? { outcome: 'NOT_FAILED', status: current.status }
           : { outcome: 'NOT_FOUND' };
       }
 
-      const order = await manager.findOneOrFail(Order, {
-        where: { id },
-        relations: { items: true },
-        order: { items: { id: 'ASC' } },
-      });
+      const order = (await this.orders.findWithItems(id, undefined, tx))!;
       // Same correlation id as the original request: the whole life of the
       // order stays traceable under one id.
       await this.outboxWriter.write(
-        manager,
+        tx,
         new OrderCreatedEvent(order.id, order.correlationId ?? randomUUID()),
       );
       return { outcome: 'REQUEUED', order };
@@ -185,16 +140,16 @@ export class OrdersService {
   }
 
   /** ADMIN sees every order; anyone else only the ones they created. */
-  private visibleTo(user: AuthenticatedUser): FindOptionsWhere<Order> {
-    return user.roles.includes(Role.ADMIN) ? {} : { createdBySub: user.sub };
+  private ownerFilter(user: AuthenticatedUser): string | undefined {
+    return user.roles.includes(Role.ADMIN) ? undefined : user.sub;
   }
 
   /**
-   * Catalog lookup keyed by lower-cased name, matching MySQL's
-   * case-insensitive collation. Unknown names reject the whole order.
+   * Catalog keyed by lower-cased name, matching MySQL's case-insensitive
+   * collation. Unknown names reject the whole order.
    */
   private async findProducts(names: string[]): Promise<Map<string, Product>> {
-    const found = await this.products.findBy({ name: In([...new Set(names)]) });
+    const found = await this.products.findByNames(names);
     const catalog = new Map(found.map((p) => [p.name.toLowerCase(), p]));
 
     const unknown = [...new Set(names)].filter(

@@ -10,6 +10,10 @@ import {
   ReservationOutcome,
 } from '../../../../src/orders/services/order-processing.service';
 import { Product } from '../../../../src/database/entities/product.entity';
+import { TransactionRunner } from '../../../../src/database/transaction-runner';
+import { OrdersRepository } from '../../../../src/orders/repositories/orders.repository';
+import { StockReservationsRepository } from '../../../../src/orders/repositories/stock-reservations.repository';
+import { ProductsRepository } from '../../../../src/products/repositories/products.repository';
 import { createTestDataSource, truncate } from '../../../support/database';
 
 describe('OrderProcessingService (real MySQL, real concurrency)', () => {
@@ -19,7 +23,12 @@ describe('OrderProcessingService (real MySQL, real concurrency)', () => {
   beforeAll(async () => {
     // Pooled connections: parallel calls really run in parallel in MySQL.
     dataSource = await createTestDataSource();
-    service = new OrderProcessingService(dataSource);
+    service = new OrderProcessingService(
+      new TransactionRunner(dataSource),
+      new OrdersRepository(dataSource),
+      new ProductsRepository(dataSource),
+      new StockReservationsRepository(),
+    );
   });
   afterAll(() => dataSource.destroy());
   beforeEach(() =>

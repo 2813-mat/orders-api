@@ -1,18 +1,15 @@
 import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
+import { TransactionRunner } from '../database/transaction-runner';
 import { OutboxModule } from '../outbox/outbox.module';
-import { Product } from '../database/entities/product.entity';
-import { OrderItem } from '../database/entities/order-item.entity';
-import { Order } from '../database/entities/order.entity';
+import { ProductsModule } from '../products/products.module';
 import { OrdersController } from './controllers/orders.controller';
+import { OrdersRepository } from './repositories/orders.repository';
 import { OrdersService } from './services/orders.service';
 
+/** HTTP side of orders (API process). */
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([Order, OrderItem, Product]),
-    OutboxModule,
-  ],
+  imports: [ProductsModule, OutboxModule],
   controllers: [OrdersController],
-  providers: [OrdersService],
+  providers: [OrdersService, OrdersRepository, TransactionRunner],
 })
 export class OrdersModule {}

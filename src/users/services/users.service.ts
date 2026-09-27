@@ -1,10 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import { AuthenticatedUser } from '../../auth/authenticated-user';
 import { EnvironmentVariables } from '../../config/env.validation';
-import { User } from '../../database/entities/user.entity';
+import { UsersRepository } from '../repositories/users.repository';
 
 /** Bounds the in-memory throttle map; the oldest entries are dropped first. */
 const MAX_TRACKED_SUBS = 10_000;
@@ -20,7 +18,7 @@ export class UsersService {
   private readonly lastSyncedAt = new Map<string, number>();
 
   constructor(
-    @InjectRepository(User) private readonly users: Repository<User>,
+    private readonly users: UsersRepository,
     config: ConfigService<EnvironmentVariables, true>,
   ) {
     this.syncIntervalMs = config.get('USER_SYNC_INTERVAL_MS', { infer: true });
@@ -37,24 +35,15 @@ export class UsersService {
       return false;
     }
 
-    const seenAt = new Date(now);
-    // Single statement, so concurrent first requests for the same sub can't
-    // race into a duplicate: the UNIQUE(keycloak_sub) turns the loser into an update.
-    await this.users
-      .createQueryBuilder()
-      .insert()
-      .into(User)
-      .values({
+    await this.users.upsertProfile(
+      {
         keycloakSub: user.sub,
         username: user.username,
         email: user.email,
         type: user.type,
-        firstSeenAt: seenAt,
-        lastSeenAt: seenAt,
-      })
-      .orUpdate(['username', 'email', 'type', 'last_seen_at'])
-      .updateEntity(false)
-      .execute();
+      },
+      new Date(now),
+    );
 
     this.remember(user.sub, now);
     return true;

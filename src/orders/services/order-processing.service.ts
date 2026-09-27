@@ -1,13 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource, EntityManager } from 'typeorm';
-import { Product } from '../../database/entities/product.entity';
+import { Order } from '../../database/entities/order.entity';
+import { TransactionRunner } from '../../database/transaction-runner';
+import { ProductsRepository } from '../../products/repositories/products.repository';
 import { InsufficientStockError } from '../domain/errors';
 import { OrderStatus } from '../domain/order-status.enum';
 import { toReservationLines } from '../domain/reservation-lines';
-import { OrderItem } from '../../database/entities/order-item.entity';
-import { Order } from '../../database/entities/order.entity';
-import { StockReservation } from '../../database/entities/stock-reservation.entity';
+import { OrdersRepository } from '../repositories/orders.repository';
+import { StockReservationsRepository } from '../repositories/stock-reservations.repository';
 
 export enum ReservationOutcome {
   PROCESSED = 'PROCESSED',
@@ -18,56 +17,47 @@ export enum ReservationOutcome {
 
 @Injectable()
 export class OrderProcessingService {
-  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly transactions: TransactionRunner,
+    private readonly orders: OrdersRepository,
+    private readonly products: ProductsRepository,
+    private readonly reservations: StockReservationsRepository,
+  ) {}
 
   /**
    * What the worker needs before the simulated work. The status read here is
    * only a shortcut; the authoritative check happens under lock.
    */
-  async findForProcessing(
+  findForProcessing(
     orderId: string,
   ): Promise<Pick<Order, 'id' | 'status' | 'customerName'> | null> {
-    return this.dataSource.getRepository(Order).findOne({
-      select: { id: true, status: true, customerName: true },
-      where: { id: orderId },
-    });
+    return this.orders.findForProcessing(orderId);
   }
 
   /** Counts one more processing attempt on a still PENDING order. */
-  async recordAttempt(orderId: string): Promise<void> {
-    await this.dataSource
-      .getRepository(Order)
-      .increment(
-        { id: orderId, status: OrderStatus.PENDING },
-        'processingAttempts',
-        1,
-      );
+  recordAttempt(orderId: string): Promise<void> {
+    return this.orders.incrementAttemptsIfPending(orderId);
   }
 
   /**
    * Reserves the stock of every item and confirms the order, all or nothing:
    *
-   * 1. `SELECT ... FOR UPDATE` on the order: a second worker holding the same
-   *    order waits here, then sees it is no longer PENDING and does nothing.
-   *    That is what keeps a retried or duplicated job from reserving twice.
-   * 2. One conditional `UPDATE ... WHERE stock >= qty` per product, in product
-   *    id order. Atomic check-and-decrement, so concurrent orders can never
-   *    take stock below zero; 0 rows affected means not enough stock and the
-   *    whole transaction (including earlier products) rolls back.
-   * 3. One `stock_reservations` row per product; its UNIQUE (order, product)
-   *    makes a double reservation impossible even if step 1 were skipped.
+   * 1. Lock the order (`FOR UPDATE`): a second worker holding the same order
+   *    waits here, then sees it is no longer PENDING and does nothing. That is
+   *    what keeps a retried or duplicated job from reserving twice.
+   * 2. One conditional decrement per product (`WHERE stock >= qty`), in
+   *    product id order. Atomic check-and-decrement, so concurrent orders can
+   *    never take stock below zero; not enough stock throws, and the whole
+   *    transaction (including earlier products) rolls back.
+   * 3. One reservation row per product; its UNIQUE (order, product) makes a
+   *    double reservation impossible even if step 1 were skipped.
    *
    * @throws InsufficientStockError after rolling back; mark the order FAILED
    * with {@link markFailed}, outside this transaction.
    */
   async reserveAndConfirm(orderId: string): Promise<ReservationOutcome> {
-    return this.dataSource.transaction(async (manager) => {
-      const order = await manager
-        .getRepository(Order)
-        .createQueryBuilder('order')
-        .setLock('pessimistic_write')
-        .where('order.id = :orderId', { orderId })
-        .getOne();
+    return this.transactions.run(async (tx) => {
+      const order = await this.orders.lockForUpdate(tx, orderId);
       if (!order) {
         return ReservationOutcome.NOT_FOUND;
       }
@@ -75,27 +65,24 @@ export class OrderProcessingService {
         return ReservationOutcome.ALREADY_FINAL;
       }
 
-      const items = await manager.find(OrderItem, { where: { orderId } });
+      const items = await this.orders.findItems(tx, orderId);
       for (const line of toReservationLines(items)) {
-        await this.takeStock(manager, line.productId, line.quantity, () => {
+        const taken = await this.products.decrementStockIfAvailable(
+          tx,
+          line.productId,
+          line.quantity,
+        );
+        if (!taken) {
           throw new InsufficientStockError(line.productName);
-        });
-        await manager.insert(StockReservation, {
+        }
+        await this.reservations.insert(tx, {
           orderId,
           productId: line.productId,
           quantity: line.quantity,
         });
       }
 
-      await manager.update(
-        Order,
-        { id: orderId },
-        {
-          status: OrderStatus.PROCESSED,
-          processedAt: () => 'CURRENT_TIMESTAMP(3)',
-          failureReason: null,
-        },
-      );
+      await this.orders.markProcessed(tx, orderId);
       return ReservationOutcome.PROCESSED;
     });
   }
@@ -104,31 +91,7 @@ export class OrderProcessingService {
    * Only a PENDING order can fail: never overwrites a final state that another
    * worker may have written meanwhile. Returns whether the order changed.
    */
-  async markFailed(orderId: string, reason: string): Promise<boolean> {
-    const result = await this.dataSource
-      .getRepository(Order)
-      .update(
-        { id: orderId, status: OrderStatus.PENDING },
-        { status: OrderStatus.FAILED, failureReason: reason.slice(0, 255) },
-      );
-    return result.affected === 1;
-  }
-
-  private async takeStock(
-    manager: EntityManager,
-    productId: number,
-    quantity: number,
-    onInsufficient: () => never,
-  ): Promise<void> {
-    const result = await manager
-      .createQueryBuilder()
-      .update(Product)
-      .set({ stock: () => 'stock - :quantity' })
-      .where('id = :productId AND stock >= :quantity', { productId, quantity })
-      .setParameters({ quantity })
-      .execute();
-    if (result.affected === 0) {
-      onInsufficient();
-    }
+  markFailed(orderId: string, reason: string): Promise<boolean> {
+    return this.orders.markFailedIfPending(orderId, reason);
   }
 }
