@@ -1,4 +1,9 @@
-import { INestApplication, ModuleMetadata, Type } from '@nestjs/common';
+import {
+  INestApplication,
+  ModuleMetadata,
+  Provider,
+  Type,
+} from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
@@ -10,6 +15,7 @@ export interface AuthTestApp {
   app: INestApplication<App>;
   idp: FakeIdp;
   get: (path: string, token?: string) => request.Test;
+  post: (path: string, body: object, token?: string) => request.Test;
   close: () => Promise<void>;
 }
 
@@ -21,6 +27,7 @@ export async function createAuthTestApp(
   controllers: Type[],
   options: {
     imports?: ModuleMetadata['imports'];
+    providers?: Provider[];
     config?: Record<string, unknown>;
   } = {},
 ): Promise<AuthTestApp> {
@@ -36,6 +43,7 @@ export async function createAuthTestApp(
       ...(options.imports ?? []),
     ],
     controllers,
+    providers: options.providers,
   }).compile();
 
   const app = moduleRef.createNestApplication<INestApplication<App>>();
@@ -46,6 +54,10 @@ export async function createAuthTestApp(
     idp,
     get: (path, token) => {
       const req = request(app.getHttpServer()).get(path);
+      return token ? req.set('Authorization', `Bearer ${token}`) : req;
+    },
+    post: (path, body, token) => {
+      const req = request(app.getHttpServer()).post(path).send(body);
       return token ? req.set('Authorization', `Bearer ${token}`) : req;
     },
     close: async () => {

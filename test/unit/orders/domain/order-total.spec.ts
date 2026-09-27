@@ -85,10 +85,17 @@ describe('calculateOrderTotals', () => {
     ).toThrow('item 1: quantity must be a positive integer');
   });
 
-  it('rejects totals beyond safe integer cents', () => {
+  it('accepts the largest total DECIMAL(12,2) can store', () => {
+    expect(
+      calculateOrderTotals([{ quantity: 1, unitPrice: 9_999_999_999.99 }]),
+    ).toEqual({ subtotals: [9_999_999_999.99], total: 9_999_999_999.99 });
+  });
+
+  it('rejects totals DECIMAL(12,2) cannot store', () => {
     expect(() =>
       calculateOrderTotals([
-        { quantity: 2_000_000_000, unitPrice: 99_999_999.99 },
+        { quantity: 1, unitPrice: 9_999_999_999.99 },
+        { quantity: 1, unitPrice: 0.01 },
       ]),
     ).toThrow(new InvalidOrderError('order total is too large'));
   });

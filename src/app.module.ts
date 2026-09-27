@@ -2,8 +2,10 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
+import { validationPipeProvider } from './common/validation';
 import { EnvironmentVariables, validateEnv } from './config/env.validation';
 import { buildTypeOrmOptions } from './database/typeorm.options';
+import { OrdersModule } from './orders/orders.module';
 import { UsersModule } from './users/users.module';
 
 @Module({
@@ -26,6 +28,8 @@ import { UsersModule } from './users/users.module';
     }),
     AuthModule,
     UsersModule,
+    OrdersModule,
   ],
+  providers: [validationPipeProvider],
 })
 export class AppModule {}

@@ -1,5 +1,8 @@
 import { InvalidOrderError } from './errors';
 
+/** DECIMAL(12,2): 9,999,999,999.99 is the largest amount the database stores. */
+export const MAX_AMOUNT_IN_CENTS = 999_999_999_999;
+
 export interface PricedLine {
   quantity: number;
   unitPrice: number;
@@ -29,7 +32,8 @@ export function calculateOrderTotals(
   });
   const totalInCents = subtotalsInCents.reduce((sum, cents) => sum + cents, 0);
 
-  if (!Number.isSafeInteger(totalInCents)) {
+  // Subtotals never exceed the total, so this bounds every stored amount.
+  if (totalInCents > MAX_AMOUNT_IN_CENTS) {
     throw new InvalidOrderError('order total is too large');
   }
 
