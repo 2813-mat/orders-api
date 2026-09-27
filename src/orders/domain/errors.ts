@@ -11,3 +11,15 @@ export class UnknownProductsError extends InvalidOrderError {
     super(`unknown products: ${productNames.join(', ')}`);
   }
 }
+
+/**
+ * Business failure: not enough stock for one of the products. Retrying won't
+ * help, so the order goes straight to FAILED.
+ */
+export class InsufficientStockError extends Error {
+  override readonly name = 'InsufficientStockError';
+
+  constructor(readonly productName: string) {
+    super(`estoque insuficiente: ${productName}`);
+  }
+}
